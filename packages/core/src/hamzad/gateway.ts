@@ -5,6 +5,7 @@ export * as HamzadGateway from "./gateway.js"
 
 import { Duration, Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { HamzadStatus } from "@opencode/util/hamzad-status"
 
 export const clientID = "hamzad-cli"
 
@@ -47,8 +48,8 @@ const decodeModel = Schema.decodeUnknownOption(Model)
 
 /**
  * The models on offer, in the gateway's order: with a key, the ones that account may use; without,
- * the ones that need no plan. `undefined` when the gateway gives no list yet: it asks for a key
- * until it serves everyone (401), and is not there at all while it is switched off (404).
+ * the ones that need no plan. When there is no list, why: the gateway asks for a key until it
+ * serves everyone (401), is on but not for this account (403), or is switched off (404).
  * One malformed entry never discards the rest.
  */
 export const models = Effect.fn("HamzadGateway.models")(function* (
@@ -60,14 +61,19 @@ export const models = Effect.fn("HamzadGateway.models")(function* (
   const response = yield* http
     .execute(key ? request.pipe(HttpClientRequest.bearerToken(key)) : request)
     .pipe(Effect.timeout("10 seconds"))
-  if (response.status === 401 || response.status === 404) return undefined
+  if (response.status === 401) return { state: key ? ("refused" as const) : ("sign-in" as const) }
+  if (response.status === 403) return { state: "no-access" as const }
+  if (response.status === 404) return { state: "unavailable" as const }
   const list = yield* HttpClientResponse.filterStatusOk(response).pipe(
     Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Struct({ data: Schema.Array(Schema.Unknown) }))),
   )
-  return list.data.flatMap((raw) => {
-    const model = Option.getOrUndefined(decodeModel(raw))
-    return model ? [model] : []
-  })
+  return {
+    state: "listed" as const,
+    models: list.data.flatMap((raw) => {
+      const model = Option.getOrUndefined(decodeModel(raw))
+      return model ? [model] : []
+    }),
+  }
 })
 
 const Device = Schema.Struct({
@@ -95,39 +101,68 @@ const post = (http: HttpClient.HttpClient, url: string, body: Record<string, str
     Effect.flatMap((request) => http.execute(request)),
   )
 
+/** A sign-in that could not go on. `reason` is the code the API or the panel gave. */
+export class DeviceError extends Schema.TaggedError<DeviceError>()("Hamzad.DeviceError", {
+  reason: Schema.String,
+}) {
+  override get message() {
+    return HamzadStatus.signIn(this.reason)
+  }
+}
+
+// These two routes refuse in the API's own shape, `{ code, message, requestId }`, not the
+// gateway's. Whatever went wrong becomes a DeviceError, so a person reads a sentence and never a
+// status line or the address of the request.
+const Refused = Schema.Struct({ code: Schema.String })
+
+const refusal = (response: HttpClientResponse.HttpClientResponse) =>
+  HttpClientResponse.schemaBodyJson(Refused)(response).pipe(
+    Effect.map((body) => body.code),
+    Effect.orElseSucceed(() => `status_${response.status}`),
+    Effect.flatMap((reason) => Effect.fail(new DeviceError({ reason }))),
+  )
+
+const sent = <A, E>(effect: Effect.Effect<A, E>) =>
+  effect.pipe(
+    Effect.mapError((error) => (error instanceof DeviceError ? error : new DeviceError({ reason: "unreachable" }))),
+  )
+
 /** Starts a sign-in the person finishes in the panel. `name` is how the device is listed there. */
 export const device = Effect.fn("HamzadGateway.device")(function* (
   http: HttpClient.HttpClient,
   api: string,
   name: string,
 ) {
-  return yield* post(http, `${api}/auth/device/code`, { client_id: clientID, device_name: name }).pipe(
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap(HttpClientResponse.schemaBodyJson(Device)),
-    Effect.timeout("15 seconds"),
+  return yield* sent(
+    post(http, `${api}/auth/device/code`, { client_id: clientID, device_name: name }).pipe(
+      Effect.timeout("15 seconds"),
+      Effect.flatMap((response) =>
+        response.status >= 400
+          ? refusal(response)
+          : HttpClientResponse.schemaBodyJson(Device)(response).pipe(
+              Effect.mapError(() => new DeviceError({ reason: "unreadable" })),
+            ),
+      ),
+    ),
   )
 })
 
-export class DeviceError extends Schema.TaggedError<DeviceError>()("Hamzad.DeviceError", {
-  reason: Schema.String,
-}) {
-  override get message() {
-    if (this.reason === "access_denied") return "The sign-in was declined in the panel."
-    if (this.reason === "expired_token") return "The sign-in code expired before it was approved. Start again."
-    return `Hamzad sign-in failed: ${this.reason}`
-  }
-}
-
 /** Waits for the panel's decision and returns the key made for this device. */
 export function token(http: HttpClient.HttpClient, api: string, code: string, interval: Duration.Duration) {
-  const loop = (wait: Duration.Duration): Effect.Effect<typeof Token.Type, unknown> =>
+  const loop = (wait: Duration.Duration): Effect.Effect<typeof Token.Type, DeviceError> =>
     Effect.gen(function* () {
       yield* Effect.sleep(wait)
-      const result = yield* post(http, `${api}/auth/device/token`, {
-        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-        device_code: code,
-        client_id: clientID,
-      }).pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Union([Token, Pending]))))
+      const response = yield* sent(
+        post(http, `${api}/auth/device/token`, {
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          device_code: code,
+          client_id: clientID,
+        }).pipe(Effect.timeout("15 seconds")),
+      )
+      // While it waits, the panel's answer is OAuth's `{ error }`; anything else is a refusal.
+      const result = yield* HttpClientResponse.schemaBodyJson(Schema.Union([Token, Pending]))(response).pipe(
+        Effect.catch(() => refusal(response)),
+      )
       if ("access_token" in result) return result
       if (result.error === "authorization_pending") return yield* loop(wait)
       if (result.error === "slow_down") return yield* loop(Duration.sum(wait, Duration.seconds(5)))

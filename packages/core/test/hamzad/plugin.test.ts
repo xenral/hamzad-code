@@ -61,7 +61,17 @@ const opus = { ...sonnet, id: "claude-opus", name: "Claude Opus 5.5", family: "c
 
 // A stand-in for Hamzad's API. `stage` is whom the gateway serves; `approveAfter` is how many
 // times the device poll answers "pending" first.
-function gateway(input: { stage?: "everyone" | "staff" | "off"; approveAfter?: number; deny?: boolean } = {}) {
+function gateway(
+  input: {
+    stage?: "everyone" | "staff" | "off"
+    approveAfter?: number
+    deny?: boolean
+    /** On, but not for the signed-in account. */
+    denied?: boolean
+    /** How the sign-in routes refuse, in the API's own shape: a status and a code. */
+    signIn?: { status: number; code?: string }
+  } = {},
+) {
   const requests: { path: string; authorization: string | null; body?: unknown }[] = []
   const state = { polls: 0, down: false, balance: 500 }
   const stage = input.stage ?? "everyone"
@@ -74,6 +84,15 @@ function gateway(input: { stage?: "everyone" | "staff" | "off"; approveAfter?: n
       const body: unknown = request.method === "POST" ? await request.json() : undefined
       requests.push({ path, authorization, body })
       if (state.down) return new Response("unavailable", { status: 503 })
+      if (path.startsWith("/api/v1/auth/device/") && (stage === "off" || input.signIn)) {
+        const refusal = input.signIn ?? { status: 404, code: "auth.device_unavailable" }
+        return refusal.code
+          ? Response.json(
+              { code: refusal.code, message: "این امکان در دسترس نیست.", requestId: "req_1" },
+              { status: refusal.status },
+            )
+          : new Response("<html>Bad gateway</html>", { status: refusal.status })
+      }
       if (path === "/api/v1/auth/device/code")
         return Response.json({
           device_code: "device-secret",
@@ -110,6 +129,8 @@ function gateway(input: { stage?: "everyone" | "staff" | "off"; approveAfter?: n
         const signedIn = authorization === `Bearer ${key}`
         if (!signedIn && (stage !== "everyone" || authorization))
           return Response.json({ error: { code: "invalid_api_key", type: "authentication_error" } }, { status: 401 })
+        if (input.denied)
+          return Response.json({ error: { code: "access_denied", type: "permission_error" } }, { status: 403 })
         return Response.json({ object: "list", data: signedIn ? [sonnet, flash, opus] : [sonnet, flash] })
       }
       return new Response("Not found", { status: 404 })
@@ -182,16 +203,105 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
     ),
   )
 
-  for (const stage of ["staff", "off"] as const)
-    it.live(`has no list, quietly, while the gateway is ${stage === "off" ? "off" : "not yet open to everyone"}`, () =>
-      served({ stage }, (started) =>
+  const status = Effect.gen(function* () {
+    const rpc = yield* Rpc.Service
+    return yield* rpc.call("hamzad.status", "get", {})
+  })
+
+  it.live("has no list while the gateway is switched off, and knows that is why", () =>
+    served({ stage: "off" }, (started) =>
+      Effect.gen(function* () {
+        yield* addPlugin()
+        expect(yield* offered).toEqual([])
+        expect(started.requests.filter((request) => request.path.endsWith("/llm/models")).length).toBe(1)
+        expect(yield* status).toEqual({ models: "unavailable" })
+      }),
+    ),
+  )
+
+  it.live("has no list before sign-in while the gateway is open to staff only, and knows a sign-in is wanted", () =>
+    served({ stage: "staff" }, () =>
+      Effect.gen(function* () {
+        yield* addPlugin()
+        expect(yield* offered).toEqual([])
+        expect(yield* status).toEqual({ models: "sign-in" })
+      }),
+    ),
+  )
+
+  it.live("knows when the gateway is on but not for this account, and when it refuses the key", () =>
+    Effect.gen(function* () {
+      yield* served({ denied: true }, () =>
+        withEnv({ HAMZAD_API_KEY: key }, () =>
+          Effect.gen(function* () {
+            yield* addPlugin()
+            expect(yield* offered).toEqual([])
+            expect(yield* status).toEqual({ models: "no-access" })
+          }),
+        ),
+      )
+    }),
+  )
+
+  it.live("knows when the gateway refuses the key it was sent", () =>
+    served({}, () =>
+      withEnv({ HAMZAD_API_KEY: `sk-hmz-${"x".repeat(43)}` }, () =>
         Effect.gen(function* () {
           yield* addPlugin()
           expect(yield* offered).toEqual([])
-          expect(started.requests.filter((request) => request.path.endsWith("/llm/models")).length).toBe(1)
+          expect(yield* status).toEqual({ models: "refused" })
         }),
       ),
+    ),
+  )
+
+  it.live("says the list is there once it is", () =>
+    served({}, () =>
+      Effect.gen(function* () {
+        yield* addPlugin()
+        expect(yield* status).toEqual({ models: "listed" })
+      }),
+    ),
+  )
+
+  const signInFails = (input: Parameters<typeof gateway>[0]) =>
+    served(input, () =>
+      Effect.gen(function* () {
+        yield* addPlugin()
+        const integrations = yield* Integration.Service
+        return yield* integrations.oauth
+          .connect({
+            integrationID: HamzadPlugin.integrationID,
+            methodID: Integration.MethodID.make("device"),
+            answer: {},
+          })
+          .pipe(
+            Effect.flip,
+            Effect.map((error) =>
+              String(error instanceof Error && error.cause instanceof Error ? error.cause.message : error),
+            ),
+          )
+      }),
     )
+
+  it.live("words a sign-in that cannot start by its code, never as a status line", () =>
+    Effect.gen(function* () {
+      expect(yield* signInFails({ stage: "off" })).toBe("Hamzad's API for tools is not available yet.")
+      expect(yield* signInFails({ signIn: { status: 429, code: "auth.device_attempts" } })).toBe(
+        "Too many sign-in attempts. Try again in a little while.",
+      )
+      expect(yield* signInFails({ signIn: { status: 409, code: "keys.too_many" } })).toBe(
+        "This account already has as many keys as it may. Revoke one in the Hamzad panel, then sign in again.",
+      )
+      // Anything it has no words for, and an answer that is not the API's at all.
+      expect(yield* signInFails({ signIn: { status: 500, code: "internal" } })).toBe(
+        "Hamzad could not complete the sign-in. Try again in a little while.",
+      )
+      expect(yield* signInFails({ signIn: { status: 502 } })).toBe(
+        "Hamzad could not complete the sign-in. Try again in a little while.",
+      )
+    }),
+  )
 
   it.live("signs in by approving the device, is labelled with the account, and lists what the account may use", () =>
     served({ approveAfter: 2 }, (started) =>
@@ -428,6 +538,19 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
           limit: 800,
         }
         expect<unknown>(yield* refused(402, day)).toEqual({ status: 402, retry: null, error: day })
+        // Switched off, the gateway answers "Not found."; on but not for this account, it says so itself.
+        const off = { code: "not_found", type: "invalid_request_error", message: "Not found." }
+        expect<unknown>(yield* refused(404, off, { request: { authorization: `Bearer ${key}` } })).toEqual({
+          status: 404,
+          retry: null,
+          error: { ...off, message: "Hamzad's API for tools is not available yet." },
+        })
+        const closed = {
+          code: "access_denied",
+          type: "permission_error",
+          message: "This account does not have access to the API yet.",
+        }
+        expect<unknown>(yield* refused(403, closed)).toEqual({ status: 403, retry: null, error: closed })
         const busy = { code: "rate_limit_exceeded", type: "rate_limit_error", message: "Too many requests." }
         expect<unknown>(yield* refused(429, busy, { response: { "retry-after": "7" } })).toEqual({
           status: 429,

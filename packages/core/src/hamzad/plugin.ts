@@ -7,6 +7,7 @@ import type { IntegrationOAuthMethodRegistration } from "@opencode/plugin/effect
 import { define } from "@opencode/plugin/effect/plugin"
 import type { SessionHttpResponse } from "@opencode/plugin/effect/session"
 import { Brand } from "@opencode/util/brand"
+import { HamzadStatus } from "@opencode/util/hamzad-status"
 import { Duration, Effect, Equal, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { Agent } from "../agent.js"
@@ -54,19 +55,29 @@ export const Plugin = define({
       editor.method.update({ integrationID, method: { type: "env", names: [keyVariable] } })
     })
 
+    // Why the list is as it is, for the command line and the interface to say when it is empty.
+    const status = { models: "unreachable" as HamzadStatus.State }
+    const said = yield* ctx.rpc
+      .register(HamzadStatus.definition, { get: () => Effect.sync(() => ({ models: status.models })) })
+      .pipe(Effect.orDie)
+
     // With a key the gateway lists what that account may use; without one, the models that need no
     // plan, so a person sees the models and their prices before signing in.
     const list = Effect.fn("HamzadPlugin.list")(function* (options: ProviderRefresh.Options) {
       const { connection, credential } = yield* activeCredential(ctx, integrationID)
       const key = secret(credential)
-      const models = yield* cache
+      const answer = yield* cache
         .get({
           key: `hamzad:models:${api}:${key ? SharedCache.fingerprint(key) : "signed-out"}`,
           ...options,
           load: HamzadGateway.models(http, api, key),
         })
-        .pipe(Effect.orElseSucceed(() => undefined))
-      return { connection, models }
+        .pipe(Effect.orElseSucceed(() => ({ state: "unreachable" as const })))
+      if (answer.state !== status.models) {
+        status.models = answer.state
+        yield* said.events.emit("changed", { models: answer.state }).pipe(Effect.ignore)
+      }
+      return { connection, models: answer.state === "listed" ? answer.models : undefined }
     })
 
     const remember = (models: typeof HamzadGateway.Models.Type) =>
@@ -209,22 +220,22 @@ function device(http: HttpClient.HttpClient, api: string) {
 }
 
 /**
- * What the person can do about a refused sign-in. The gateway's own text says it for any client;
- * here the command to run is known. Every other refusal keeps the gateway's wording, which already
- * carries the numbers and where to top up.
+ * A refusal in words that say what to do, where this build knows more than the gateway's own
+ * text does: the command that signs in, and that a gateway that is switched off ("Not found.")
+ * is simply not open yet. Every other refusal keeps the gateway's wording, which already carries
+ * the numbers and where to top up.
  */
 export function message(code: string | null | undefined, signedIn: boolean) {
-  if (code !== "invalid_api_key") return undefined
-  return signedIn
-    ? `Hamzad did not accept this sign-in. Run \`${Brand.cli} auth login\` to sign in again.`
-    : `You are not signed in to Hamzad. Run \`${Brand.cli} auth login\` and approve this device in your panel.`
+  if (code === "invalid_api_key") return signedIn ? HamzadStatus.refused : HamzadStatus.signedOut
+  if (code === "not_found") return HamzadStatus.unavailable
+  return undefined
 }
 
 // The status and headers stay as the gateway sent them, so retries, rate-limit waits and context
-// compaction behave as they do for any provider.
+// compaction behave as they do for any provider. Neither status rewritten here is tried again.
 function explain(event: SessionHttpResponse) {
   return Effect.gen(function* () {
-    if (event.response.status !== 401) return
+    if (event.response.status !== 401 && event.response.status !== 404) return
     const body = yield* Effect.promise(() => event.response.clone().text())
     const refusal = Option.getOrUndefined(decodeRefusal(body))
     const text = refusal && message(refusal.error.code, event.request.headers.has("authorization"))
