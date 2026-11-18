@@ -4,6 +4,7 @@ import { NodeServices } from "@effect/platform-node"
 import { Service } from "@opencode/client/effect/service"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
+import { Brand } from "@opencode/util/brand"
 import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL, OPENCODE_VERSION } from "./version"
 import { AppProcess } from "@opencode/util/process"
 import { randomBytes, randomUUID } from "node:crypto"
@@ -117,7 +118,8 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
           models: {
             url: process.env.OPENCODE_MODELS_URL,
             file: process.env.OPENCODE_MODELS_PATH,
-            fetch: !truthy(process.env.OPENCODE_DISABLE_MODELS_FETCH),
+            fetch: !truthy(process.env.OPENCODE_DISABLE_MODELS_FETCH) && Brand.catalog(),
+            snapshot: Brand.catalog(),
           },
           config: {
             directory: process.env.OPENCODE_CONFIG_DIR,
