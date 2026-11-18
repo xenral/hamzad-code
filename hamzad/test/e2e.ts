@@ -182,6 +182,14 @@ try {
     chats[0]?.agent,
   )
   check(
+    "the model is told it runs in Hamzad CLI, not in OpenCode",
+    turns.length > 0 &&
+      turns.every(
+        (turn) => (turn.body?.opening.includes("Hamzad CLI") ?? false) && !/opencode/i.test(turn.body?.opening ?? ""),
+      ),
+    turns.map((turn) => turn.body?.opening),
+  )
+  check(
     "the title went to the small model",
     chats.some((request) => request.body?.model === "deepseek" && request.body.tools.length === 0),
     chats.map((request) => request.body?.model),

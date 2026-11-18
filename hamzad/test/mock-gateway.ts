@@ -82,6 +82,8 @@ export interface Recorded {
     readonly usage?: boolean
     readonly tools: readonly string[]
     readonly roles: readonly string[]
+    /** How the instructions open: the sentence that tells the model what it is running in. */
+    readonly opening: string
   }
 }
 
@@ -195,6 +197,9 @@ export function start(options: { port?: number; approveAfter?: number; credits?:
         usage: chat.stream_options?.include_usage,
         tools: (chat.tools ?? []).flatMap((tool) => tool.function?.name ?? []),
         roles: messages.map((message) => message.role),
+        opening: text(messages.find((message) => message.role === "system" || message.role === "developer"))
+          .split("\n")[0]
+          .slice(0, 200),
       })
       const last = messages.at(-1)
       const asked = text(messages.findLast((message) => message.role === "user"))
