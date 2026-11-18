@@ -2,14 +2,20 @@
 # Installs the Hamzad CLI.
 #
 #   curl -fsSL https://hamzad.ai/cli/install | bash
+#   curl -fsSL https://github.com/xenral/hamzad-code/releases/latest/download/install | bash
 #
-# Everything is fetched from hamzad.ai: the version, the archive for this machine and its checksum.
+# The version, the archive for this machine and its checksum are in two places: hamzad.ai/cli, and
+# this repository's releases on GitHub. hamzad.ai is asked first; what it does not have, or cannot
+# be reached for, is taken from the release.
 # Derived from OpenCode's installer (MIT, Copyright (c) 2025 opencode); see NOTICE in the archive.
 set -euo pipefail
 APP=hamzad
-# TODO(ali): confirm — where the downloads are hosted. HAMZAD_CLI_URL overrides it for testing.
+# HAMZAD_CLI_URL names another copy of hamzad.ai/cli, such as freshly packed files on this machine.
+# HAMZAD_CLI_RELEASES names another copy of the releases; set to nothing, only the first is asked.
 BASE=${HAMZAD_CLI_URL:-https://hamzad.ai/cli}
 BASE=${BASE%/}
+RELEASES=${HAMZAD_CLI_RELEASES-https://github.com/xenral/hamzad-code/releases}
+RELEASES=${RELEASES%/}
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
@@ -198,12 +204,36 @@ else
         exit 1
     fi
 
+    # Where each place keeps the newest version's description, and one version's files.
+    places="site"
+    if [ -n "$RELEASES" ]; then
+        places="site releases"
+    fi
+    latest_at() {
+        case "$1" in
+            site) echo "$BASE/latest.json" ;;
+            releases) echo "$RELEASES/latest/download/latest.json" ;;
+        esac
+    }
+    files_at() {
+        case "$1" in
+            site) echo "$BASE/v/$2" ;;
+            releases) echo "$RELEASES/download/$APP-v$2" ;;
+        esac
+    }
+
     if [ -z "$requested_version" ]; then
-        metadata=$(curl -fsSL "$BASE/latest.json" || true)
-        specific_version=$(echo "$metadata" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+        specific_version=""
+        for place in $places; do
+            metadata=$(curl -fsSL --connect-timeout 15 "$(latest_at "$place")" 2>/dev/null || true)
+            specific_version=$(echo "$metadata" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+            if [ -n "$specific_version" ]; then
+                break
+            fi
+        done
 
         if [ -z "$specific_version" ]; then
-            echo -e "${RED}Failed to fetch version information from $BASE${NC}"
+            echo -e "${RED}Failed to fetch version information from $BASE${RELEASES:+ or $RELEASES}${NC}"
             exit 1
         fi
     else
@@ -212,11 +242,20 @@ else
         specific_version=$requested_version
     fi
 
+    # The archive comes from the first place that has it. A release's files are answered through a
+    # redirect, so the question follows redirects.
     filename="$APP-$target.tar.gz"
-    url="$BASE/v/$specific_version/$filename"
-    sums_url="$BASE/v/$specific_version/SHA256SUMS"
-    http_status=$(curl -s -o /dev/null -I -w "%{http_code}" "$url" || true)
-    if [ "$http_status" = "404" ]; then
+    url=""
+    for place in $places; do
+        candidate=$(files_at "$place" "$specific_version")
+        http_status=$(curl -s -o /dev/null -I -L --connect-timeout 15 -w "%{http_code}" "$candidate/$filename" || true)
+        if [ "$http_status" = "200" ]; then
+            url="$candidate/$filename"
+            sums_url="$candidate/SHA256SUMS"
+            break
+        fi
+    done
+    if [ -z "$url" ]; then
         echo -e "${RED}Error: Version ${specific_version} is not available for $target${NC}"
         exit 1
     fi

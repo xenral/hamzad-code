@@ -8,11 +8,15 @@ name: hamzad-release
 #   sign      the macOS binaries get an ad-hoc signature, which Apple Silicon requires to run them
 #   pack      archives with ripgrep inside, checksums, latest.json, the installer and the mirrors
 #   smoke     each platform installs its archive and runs the end-to-end check against the stand-in gateway
-#   release   a GitHub Release with everything, always
+#   release   a GitHub Release with everything, for a tag
 #   publish   uploads the same files to where hamzad.ai/cli is served from, when the secrets for it exist
+#
+# A rehearsal: push a branch `hamzad-try/<version>`. Everything up to the smoke runs, on every
+# platform, and nothing is released. Delete the branch afterwards.
 on:
   push:
     tags: ["hamzad-v*"]
+    branches: ["hamzad-try/**"]
   workflow_dispatch:
     inputs:
       version:
@@ -43,7 +47,8 @@ jobs:
       - id: version
         name: Read the version
         run: |
-          version="${INPUT_VERSION:-${GITHUB_REF_NAME#hamzad-v}}"
+          named="${GITHUB_REF_NAME#hamzad-v}"
+          version="${INPUT_VERSION:-${named#hamzad-try/}}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-hamzad\.[0-9]+$ ]]; then
             echo "::error::'$version' is not <upstream version>-hamzad.<n>"
             exit 1
@@ -154,12 +159,30 @@ jobs:
           name: site
           path: site
       # The installer itself, served from this machine, so what is checked is what a person runs.
+      # With no copy of the releases to turn to, a file missing from the packed ones fails here.
       - name: Install from the packed files
         run: |
           bun hamzad/test/serve.ts site 8765 &
           sleep 2
-          HAMZAD_CLI_URL=http://127.0.0.1:8765 bash site/install --no-modify-path
+          HAMZAD_CLI_URL=http://127.0.0.1:8765 HAMZAD_CLI_RELEASES= bash site/install --no-modify-path
           "$HOME/.hamzad/bin/hamzad" --version | grep -F "$VERSION"
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+      # The same files laid out as the GitHub Release will hold them, and a hamzad.ai that has none
+      # of them: the way an install goes while only the release exists.
+      - name: Install as from the release
+        run: |
+          mkdir -p as-release/releases/latest/download "as-release/releases/download/hamzad-v$VERSION"
+          cp site/latest.json site/install as-release/releases/latest/download/
+          cp "site/v/$VERSION"/* "as-release/releases/download/hamzad-v$VERSION/"
+          bun hamzad/test/serve.ts as-release 8766 &
+          sleep 2
+          second="$(cd "$RUNNER_TEMP" && pwd)/second-home"
+          mkdir -p "$second"
+          HOME="$second" XDG_CACHE_HOME="$second/.cache" HAMZAD_CLI_URL=http://127.0.0.1:8766/site \
+            HAMZAD_CLI_RELEASES=http://127.0.0.1:8766/releases \
+            bash as-release/releases/latest/download/install --no-modify-path
+          "$second/.hamzad/bin/hamzad" --version | grep -F "$VERSION"
         env:
           VERSION: ${{ needs.build.outputs.version }}
       - name: End to end, against the stand-in gateway, with no outside host allowed
@@ -169,7 +192,7 @@ jobs:
 
   release:
     needs: [build, pack, smoke]
-    if: github.event_name == 'push'
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -182,16 +205,34 @@ jobs:
       - name: Publish the GitHub Release
         run: |
           cp site/latest.json site/install "site/v/$VERSION/"
+          releases="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases"
+          cat > notes.md <<EOF
+          A coding agent for the terminal, on your Hamzad account: what you use is paid from your Hamzad credits, per token. Built on OpenCode ${VERSION%%-hamzad.*}.
+
+          ## Install
+
+          Linux, macOS, and Windows in Git Bash:
+
+          \`\`\`bash
+          curl -fsSL $releases/latest/download/install | bash
+          hamzad auth login
+          \`\`\`
+
+          Then run \`hamzad\` in a project. For this version in particular, add \`-s -- --version $VERSION\` after \`bash\`.
+
+          The installer takes the archive for your machine and checks it against \`SHA256SUMS\` before unpacking it.
+
+          Signing in needs Hamzad's API for tools to be open for your account. Until it is, the CLI says that it is not available yet.
+          EOF
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Hamzad CLI $VERSION" \
-            --notes "Built on OpenCode ${VERSION%%-hamzad.*}. Install: \`curl -fsSL https://hamzad.ai/cli/install | bash\`" \
-            "site/v/$VERSION"/*
+            --notes-file notes.md "site/v/$VERSION"/*
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
 
-  # TODO(ali): confirm — where hamzad.ai/cli is served from. This assumes a directory on the box
-  # that Caddy serves at /cli/*, filled over the same SSH path the deploy uses. With the secrets
-  # absent the job does nothing and the GitHub Release above is the only place the files are.
+  # TODO(ali): confirm — where hamzad.ai/cli is served from. This assumes a directory on a server
+  # that serves it at /cli/*, filled over SSH. With the secrets absent the job does nothing and the
+  # GitHub Release above is the only place the files are; the installer takes them from there.
   publish:
     needs: [build, release]
     runs-on: ubuntu-24.04

@@ -4,12 +4,17 @@ A coding agent for the terminal, on your Hamzad account. You sign in once by app
 in your panel, and what you use is paid from your Hamzad credits, per token.
 
 ```bash
-curl -fsSL https://hamzad.ai/cli/install | bash
+curl -fsSL https://github.com/xenral/hamzad-code/releases/latest/download/install | bash
 hamzad auth login
 cd <project> && hamzad
 ```
 
-The guide, in Persian, is at <https://hamzad.ai/cli>.
+That is Linux, macOS, and Windows in Git Bash. The installer takes the archive for your machine from
+the newest [release](https://github.com/xenral/hamzad-code/releases) and checks it against the
+release's `SHA256SUMS` before unpacking it into `~/.hamzad/bin`.
+
+Signing in needs Hamzad's API for tools to be open for your account. Until it is, the CLI says that
+it is not available yet.
 
 ## Built on OpenCode
 
@@ -33,7 +38,8 @@ Everything that tells this build apart is in a few places, so that upstream can 
 | `packages/tui/src/hamzad/`                   | The credits left, in the sidebar and under the prompt; the sign-in dialog when a prompt is sent before signing in                                                             |
 | `packages/cli/src/hamzad/`                   | `auth login` and `auth logout` meaning Hamzad when nothing is named; `auth list` marking the sign-in in use                                                                   |
 | `hamzad/`                                    | The installer, the packing script, the stand-in gateway and the end-to-end check                                                                                              |
-| `.github/workflows/hamzad-*.yml`             | The release                                                                                                                                                                   |
+| `.github/workflows/hamzad-*.yml`             | The checks, the release, and the weekly try at merging upstream                                                                                                               |
+| `.github/upstream-workflows/`                | Upstream's own workflows, parked where GitHub does not run them                                                                                                               |
 
 Upstream's own files are edited only to read a value from the brand module or to call into one of the
 folders above. `git diff <upstream commit> -- . ':!hamzad' ':!packages/*/src/hamzad' ':!packages/*/test/hamzad'`
@@ -71,4 +77,18 @@ git merge v2.3.N^
 ```
 
 Then run the checks above, both test profiles, and the end-to-end check, which fails when a merge
-brings in a new outside host.
+brings in a new outside host. A workflow upstream added arrives in `.github/workflows/`: move it to
+`.github/upstream-workflows/` in the merge commit, or the check fails.
+
+### Releasing
+
+A version is the upstream version it is built on, then `-hamzad.<n>`. Pushing the tag
+`hamzad-v<version>` builds every platform, installs and runs each build on its own platform, and
+publishes a GitHub Release with the archives, their checksums and the installer:
+
+```bash
+git tag hamzad-v2.3.2-hamzad.1 && git push origin hamzad-v2.3.2-hamzad.1
+```
+
+To rehearse it first, push the same commit as a branch `hamzad-try/<version>`: everything runs but
+the release. Delete the branch afterwards.
