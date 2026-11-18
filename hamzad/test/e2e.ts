@@ -23,6 +23,11 @@ const failures: string[] = []
 const check = (name: string, ok: boolean, detail?: unknown) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${name}${ok || detail === undefined ? "" : `\n     ${JSON.stringify(detail)}`}`)
   if (!ok) failures.push(name)
+  // On a runner, the failed check is also left where it shows without opening the log.
+  if (!ok && process.env.GITHUB_ACTIONS === "true") {
+    const told = detail === undefined ? name : `${name}: ${JSON.stringify(detail)}`
+    console.log(`::error title=end to end::${told.slice(0, 1800).replace(/%/g, "%25").replace(/\r?\n/g, "%0A")}`)
+  }
 }
 
 const home = await fs.mkdtemp(path.join(os.tmpdir(), "hamzad-e2e-"))

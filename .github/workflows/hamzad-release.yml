@@ -34,6 +34,11 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   BUN_VERSION: 1.4.4
 
+# bash everywhere, so that a failure on the left of a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -62,12 +67,15 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Build
         working-directory: packages/cli
-        run: bun run script/build.ts --skip-web-ui && rm -rf dist/.bun
+        run: bun run script/build.ts --skip-web-ui 2>&1 | tee "$RUNNER_TEMP/hamzad-build.log" && rm -rf dist/.bun
         env:
           OPENCODE_CHANNEL: latest
           OPENCODE_VERSION: ${{ steps.version.outputs.version }}
           BUN_COMPILE_RELEASE: bun-v${{ env.BUN_VERSION }}
           GH_TOKEN: ${{ github.token }} # read-only; raises the rate limit for Bun release downloads
+      - if: failure()
+        name: Leave the end of the output on the run's page
+        run: bash hamzad/script/tell.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build
@@ -123,9 +131,12 @@ jobs:
           name: build-signed
           path: packages/cli/dist
       - name: Pack
-        run: bun hamzad/script/pack.ts --version "$VERSION"
+        run: bun hamzad/script/pack.ts --version "$VERSION" 2>&1 | tee "$RUNNER_TEMP/hamzad-pack.log"
         env:
           VERSION: ${{ needs.build.outputs.version }}
+      - if: failure()
+        name: Leave the end of the output on the run's page
+        run: bash hamzad/script/tell.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: site
@@ -145,9 +156,6 @@ jobs:
           - { host: windows-latest, target: windows-x64 }
     runs-on: ${{ matrix.host }}
     timeout-minutes: 20
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -164,7 +172,8 @@ jobs:
         run: |
           bun hamzad/test/serve.ts site 8765 &
           sleep 2
-          HAMZAD_CLI_URL=http://127.0.0.1:8765 HAMZAD_CLI_RELEASES= bash site/install --no-modify-path
+          HAMZAD_CLI_URL=http://127.0.0.1:8765 HAMZAD_CLI_RELEASES= bash site/install --no-modify-path 2>&1 |
+            tee "$RUNNER_TEMP/hamzad-install.log"
           "$HOME/.hamzad/bin/hamzad" --version | grep -F "$VERSION"
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -181,14 +190,19 @@ jobs:
           mkdir -p "$second"
           HOME="$second" XDG_CACHE_HOME="$second/.cache" HAMZAD_CLI_URL=http://127.0.0.1:8766/site \
             HAMZAD_CLI_RELEASES=http://127.0.0.1:8766/releases \
-            bash as-release/releases/latest/download/install --no-modify-path
+            bash as-release/releases/latest/download/install --no-modify-path 2>&1 |
+            tee "$RUNNER_TEMP/hamzad-install-as-release.log"
           "$second/.hamzad/bin/hamzad" --version | grep -F "$VERSION"
         env:
           VERSION: ${{ needs.build.outputs.version }}
       - name: End to end, against the stand-in gateway, with no outside host allowed
         run: |
           exe="${{ runner.os == 'Windows' && '.exe' || '' }}"
-          bun hamzad/test/e2e.ts --bin "$HOME/.hamzad/bin/hamzad$exe" --rg "${XDG_CACHE_HOME:-$HOME/.cache}/hamzad/bin/rg$exe"
+          bun hamzad/test/e2e.ts --bin "$HOME/.hamzad/bin/hamzad$exe" --rg "${XDG_CACHE_HOME:-$HOME/.cache}/hamzad/bin/rg$exe" 2>&1 |
+            tee "$RUNNER_TEMP/hamzad-e2e.log"
+      - if: failure()
+        name: Leave the end of the output on the run's page
+        run: bash hamzad/script/tell.sh
 
   release:
     needs: [build, pack, smoke]
