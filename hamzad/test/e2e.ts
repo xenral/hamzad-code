@@ -10,7 +10,7 @@
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { key, start } from "./mock-gateway"
+import { key, panelKey, start } from "./mock-gateway"
 
 const root = path.join(import.meta.dir, "../..")
 const flag = process.argv.indexOf("--bin")
@@ -124,6 +124,20 @@ try {
   const version = await run(["--version"])
   check("the command answers to its own name", version.code === 0 && /^hamzad /.test(version.stdout.trim()), version)
 
+  // The help a person reads first names this program, not the one it is built on.
+  const help = await Promise.all(
+    [["--help"], ["auth", "--help"], ["run", "--help"], ["models", "--help"], ["upgrade", "--help"]].map((args) =>
+      run(args),
+    ),
+  )
+  check(
+    "the top-level help texts say Hamzad and never OpenCode",
+    help.every((screen) => screen.code === 0 && !/opencode/i.test(screen.stdout)) &&
+      help[0].stdout.includes("Directory to start Hamzad in") &&
+      help[0].stdout.includes("Run Hamzad with a message"),
+    help.map((screen) => screen.stdout.match(/.*opencode.*/gi)),
+  )
+
   // A first run, before any sign-in: the models and their prices are there to see.
   const listed = await run(["models", "--standalone"])
   check(
@@ -154,8 +168,12 @@ try {
     unsigned.map((request) => ({ model: request.body?.model, tools: request.body?.tools.length })),
   )
 
-  const login = await run(["auth", "login", "hamzad", "--method", "device", "--standalone"])
-  check("the device sign-in completes", login.code === 0, { code: login.code, stderr: login.stderr.slice(-400) })
+  // No argument and no terminal: `auth login` means Hamzad, by approving the device.
+  const login = await run(["auth", "login", "--standalone"])
+  check("a bare `auth login` signs in to Hamzad", login.code === 0, {
+    code: login.code,
+    stderr: login.stderr.slice(-400),
+  })
   check(
     "the sign-in shows the code to enter",
     (login.stdout + login.stderr).includes("ABCD-EFGH"),
@@ -296,6 +314,34 @@ try {
       requests: gateway.requests.slice(before).map((request) => request.path),
       output: (capped.stdout + capped.stderr).slice(-400),
     },
+  )
+
+  // A key in the environment is the one meant, even with a sign-in stored.
+  const mark = gateway.requests.length
+  const override = await run(["run", "--standalone", "--auto", "--format", "json", "hello"], {
+    HAMZAD_API_KEY: panelKey,
+  })
+  const overridden = gateway.requests.slice(mark).filter((request) => request.path === "/llm/chat/completions")
+  check(
+    "HAMZAD_API_KEY is used ahead of the stored sign-in",
+    override.code === 0 &&
+      overridden.length > 0 &&
+      overridden.every((request) => request.authorization === `Bearer ${panelKey}`),
+    { code: override.code, sent: overridden.map((request) => request.authorization?.slice(0, 18)) },
+  )
+  const both = await run(["auth", "list", "--standalone"], { HAMZAD_API_KEY: panelKey })
+  check(
+    "`auth list` says the environment's key is the one in use",
+    /HAMZAD_API_KEY\s+environment, in use/.test(both.stdout) && /\+98912•••0001\s+stored\s*$/m.test(both.stdout),
+    both.stdout,
+  )
+
+  const logout = await run(["auth", "logout", "--standalone"])
+  const after = await run(["auth", "list", "--standalone"])
+  check(
+    "a bare `auth logout` removes the one Hamzad sign-in",
+    logout.code === 0 && !after.stdout.includes("+98912•••0001"),
+    { code: logout.code, output: (logout.stdout + logout.stderr).slice(-300), list: after.stdout },
   )
 
   const withKey = await run(["run", "--standalone", "--auto", "--format", "json", "hello"], {

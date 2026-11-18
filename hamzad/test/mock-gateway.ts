@@ -11,6 +11,8 @@
 // After a tool result comes back, the reply quotes it, which proves the round trip.
 
 export const key = `sk-hmz-${"t".repeat(43)}`
+// A second valid key, as one made in the panel: what a person puts in HAMZAD_API_KEY.
+export const panelKey = `sk-hmz-${"p".repeat(43)}`
 
 const price = (input: number, output: number, read: number, write: number | null) => ({
   unit: "credits_per_million_tokens",
@@ -247,7 +249,7 @@ export function start(
         })
 
       if (!path.startsWith("/llm/")) return new Response("Not found", { status: 404 })
-      const signedIn = authorization === `Bearer ${key}`
+      const signedIn = authorization === `Bearer ${key}` || authorization === `Bearer ${panelKey}`
       if (path === "/llm/models") {
         record()
         if (stage === "off") return error("not_found")
