@@ -2,6 +2,7 @@ import { EOL } from "node:os"
 import { Effect } from "effect"
 import { Commands } from "../../commands"
 import { Runtime } from "../../../framework/runtime"
+import { HamzadAuth } from "../../../hamzad/auth"
 import { createClient, loadIntegrations } from "./shared"
 import { errorMessage } from "../../../util/error"
 
@@ -34,10 +35,10 @@ const list = Effect.fn("cli.auth.list")(function* (input) {
     return
   }
   const rows = integrations.flatMap((integration) =>
-    integration.connections.map((connection) => ({
+    integration.connections.map((connection, index) => ({
       integration: integration.name,
       source: connection.type === "credential" ? connection.label : connection.name,
-      type: connection.type === "credential" ? "stored" : "environment",
+      type: (connection.type === "credential" ? "stored" : "environment") + HamzadAuth.inUse(integration, index),
     })),
   )
   if (rows.length === 0) {

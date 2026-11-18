@@ -3,6 +3,7 @@ import { Effect, Option } from "effect"
 import type { FormAnswer, IntegrationInfo, OpenCodeClient } from "@opencode/client"
 import { Commands } from "../../commands"
 import { Runtime } from "../../../framework/runtime"
+import { HamzadAuth } from "../../../hamzad/auth"
 import { selectIntegration, type IntegrationChoice } from "../../../ui/integration-picker"
 import { handlePromptErrors, openUrl, prompt, requireInteractive } from "../../../ui/prompt"
 import { errorMessage } from "../../../util/error"
@@ -32,7 +33,7 @@ export default Runtime.handler(
   Commands.commands.auth.commands.login,
   Effect.fn("cli.auth.login")((input) =>
     login({
-      target: Option.getOrUndefined(input.target),
+      target: HamzadAuth.target(Option.getOrUndefined(input.target)),
       method: Option.getOrUndefined(input.method),
       answer: input.answer,
     }).pipe(handlePromptErrors),
@@ -51,7 +52,7 @@ const login = Effect.fn("cli.auth.login.run")(function* (input: {
   const integration = yield* findIntegration(client, input.target)
   const methods = connectMethods(integration)
   if (methods.length === 0) yield* Effect.fail(new Error(`${integration.name} has no interactive login methods`))
-  const method = yield* chooseMethod(methods, input.method)
+  const method = yield* chooseMethod(methods, HamzadAuth.method(integration.id, input.method))
   const answer = yield* answerForm(method.type === "command" ? undefined : method.form, input.answer)
   yield* authenticate(client, integration, method, answer)
   outro("Done")
