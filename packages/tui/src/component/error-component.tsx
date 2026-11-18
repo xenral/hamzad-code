@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/brand"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import { createSignal, For, Show } from "solid-js"
@@ -219,6 +220,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
 }
 
 function buildIssueURL(message: string, stack: string, version: string) {
+  if (Brand.isHamzad) return Brand.support(version)
   // Field keys match the ids in .github/ISSUE_TEMPLATE/bug-report.yml so the issue
   // form opens pre-filled. Populating os/terminal/reproduce keeps the report past
   // the contributing-guidelines compliance check, which pushes for system info.

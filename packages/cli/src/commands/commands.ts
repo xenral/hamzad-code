@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/brand"
 import { Argument, Flag, GlobalFlag } from "effect/cli"
 import { Schema } from "effect"
 import { CliFlag } from "../framework/flag"
@@ -46,8 +47,8 @@ const PermissionParams = {
   ),
 }
 
-const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME : "opencode", {
-  description: "OpenCode command line interface",
+const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME : Brand.cli, {
+  description: `${Brand.name} command line interface`,
   params: {
     ...ServerParams,
     ...PermissionParams,

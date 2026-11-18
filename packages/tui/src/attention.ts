@@ -1,4 +1,5 @@
 /// <reference path="./audio.d.ts" />
+import { Brand } from "@opencode/util/brand"
 import type {
   Attention,
   AttentionNotifyOptions,
@@ -32,7 +33,7 @@ type AttentionHost = Attention & {
   dispose(): void
 }
 
-const DEFAULT_TITLE = "OpenCode"
+const DEFAULT_TITLE = Brand.name
 const TITLE_LIMIT = 80
 const MESSAGE_LIMIT = 240
 const BUILTIN_SOUNDS: Record<AttentionSoundName, string> = {
