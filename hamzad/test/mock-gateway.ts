@@ -175,13 +175,18 @@ const text = (message: Message | undefined) =>
     ? message.content
     : (message?.content ?? []).map((part) => part.text ?? "").join("")
 
+type Stage = "everyone" | "staff" | "off" | "absent"
+
 export function start(
   options: {
     port?: number
     approveAfter?: number
     credits?: number
-    /** Whom the gateway serves: until it is `everyone` the model list asks for a key; `off` is a 404. */
-    stage?: "everyone" | "staff" | "off"
+    /**
+     * Whom the gateway serves: until it is `everyone` the model list asks for a key; `off` is a 404;
+     * `absent` is an API from before any of these routes existed.
+     */
+    stage?: Stage
   } = {},
 ) {
   // `state` may be changed while the gateway runs, as a setting would be: `stage`, `denied` (it
@@ -191,7 +196,7 @@ export function start(
     polls: 0,
     credits: options.credits ?? 5000,
     spent: 0,
-    stage: options.stage ?? ("everyone" as "everyone" | "staff" | "off"),
+    stage: options.stage ?? ("everyone" as Stage),
     denied: false,
     attempts: false,
   }
@@ -225,6 +230,12 @@ export function start(
           agent: request.headers.get("user-agent"),
           body,
         })
+
+      // An API without these routes answers every one of them as an address it does not have.
+      if (state.stage === "absent" && path !== "/panel/device") {
+        record()
+        return turnedAway(404, "resource.not_found", "چیزی که دنبالش بودی پیدا نشد.")
+      }
 
       if (path === "/auth/device/code") {
         record()

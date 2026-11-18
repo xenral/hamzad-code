@@ -422,6 +422,31 @@ try {
     { code: offLogin.code, output: output(offLogin).slice(-300) },
   )
 
+  // What a copy downloaded today meets: an API that has none of these routes yet.
+  gateway.state.stage = "absent"
+  const absentModels = await run(["models", "--standalone"], fresh("absent"))
+  check(
+    "before the API has these routes, an empty model list says it is not available yet",
+    !absentModels.stdout.includes("hamzad/") &&
+      absentModels.stderr.includes("Hamzad's API for tools is not available yet."),
+    { stdout: absentModels.stdout.slice(-200), stderr: absentModels.stderr.slice(-300) },
+  )
+  const absentLogin = await run(["auth", "login", "--standalone"], fresh("absent"))
+  check(
+    "before the API has these routes, a sign-in says the same, not to try again later",
+    absentLogin.code !== 0 &&
+      output(absentLogin).includes("Hamzad's API for tools is not available yet.") &&
+      !output(absentLogin).includes("Try again") &&
+      !raw.test(output(absentLogin)),
+    { code: absentLogin.code, output: output(absentLogin).slice(-300) },
+  )
+  const absentRun = await run(hello, fresh("absent"))
+  check(
+    "before the API has these routes, a prompt says the same",
+    absentRun.code !== 0 && output(absentRun).includes("Hamzad's API for tools is not available yet."),
+    { code: absentRun.code, output: output(absentRun).slice(-300) },
+  )
+
   gateway.state.stage = "staff"
   const staffModels = await run(["models", "--standalone"], fresh("staff"))
   check(

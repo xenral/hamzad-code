@@ -56,6 +56,8 @@ export function signIn(code: string) {
     case "expired_token":
       return "The sign-in code expired before it was approved. Start again."
     case "auth.device_unavailable":
+    // An API from before the sign-in routes existed answers as for any address it does not have.
+    case "resource.not_found":
       return unavailable
     case "auth.device_attempts":
       return "Too many sign-in attempts. Try again in a little while."

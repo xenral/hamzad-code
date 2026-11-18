@@ -37,9 +37,10 @@ describe("Hamzad's states in words", () => {
   test("a sign-in that cannot go on is worded by its code, with a plain sentence for any other", () => {
     expect(
       run(
-        `const { HamzadStatus } = await import(${JSON.stringify(status)}); console.log(JSON.stringify(["auth.device_unavailable", "auth.device_attempts", "access_denied", "status_502", "unreachable"].map(HamzadStatus.signIn)))`,
+        `const { HamzadStatus } = await import(${JSON.stringify(status)}); console.log(JSON.stringify(["auth.device_unavailable", "resource.not_found", "auth.device_attempts", "access_denied", "status_502", "unreachable"].map(HamzadStatus.signIn)))`,
       ),
     ).toEqual([
+      "Hamzad's API for tools is not available yet.",
       "Hamzad's API for tools is not available yet.",
       "Too many sign-in attempts. Try again in a little while.",
       "The sign-in was declined in the panel.",
