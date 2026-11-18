@@ -33,12 +33,13 @@ const sonnet = {
   max_output_tokens: 32000,
   capabilities: { tools: true, images: true, reasoning: true },
   reasoning_efforts: ["low", "medium", "high"],
+  cache_format: "anthropic" as const,
   pricing: {
     unit: "credits_per_million_tokens",
-    input: 1935.5,
-    output: 9677.4,
-    cache_read: 193.5,
-    cache_write: 2419.4,
+    input: 1271.4919,
+    output: 6357.4594,
+    cache_read: 127.1492,
+    cache_write: 1589.3648,
   },
   default: true,
   small: false,
@@ -46,26 +47,32 @@ const sonnet = {
 const flash = {
   id: "deepseek",
   object: "model",
-  name: "DeepSeek Flash",
+  name: "DeepSeek V4.1 Flash",
   context_window: 128000,
-  max_output_tokens: 8000,
+  max_output_tokens: 16000,
   capabilities: { tools: true, images: false, reasoning: false },
-  pricing: { unit: "credits_per_million_tokens", input: 180, output: 720, cache_read: null },
+  cache_format: null,
+  pricing: { unit: "credits_per_million_tokens", input: 190.7238, output: 762.8951, cache_read: null },
   default: false,
   small: true,
 }
+// A model that needs a plan: the gateway lists it only for a signed-in account.
+const opus = { ...sonnet, id: "claude-opus", name: "Claude Opus 5.5", family: "claude-opus", default: false }
 
-// A stand-in for Hamzad's API. `approveAfter` is how many times the device poll answers "pending" first.
-function gateway(input: { models?: unknown[]; approveAfter?: number; deny?: boolean } = {}) {
+// A stand-in for Hamzad's API. `stage` is whom the gateway serves; `approveAfter` is how many
+// times the device poll answers "pending" first.
+function gateway(input: { stage?: "everyone" | "staff" | "off"; approveAfter?: number; deny?: boolean } = {}) {
   const requests: { path: string; authorization: string | null; body?: unknown }[] = []
-  const state = { polls: 0, models: input.models ?? [sonnet, flash], down: false, balance: 500 }
+  const state = { polls: 0, down: false, balance: 500 }
+  const stage = input.stage ?? "everyone"
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url)
       const path = url.pathname
+      const authorization = request.headers.get("authorization")
       const body: unknown = request.method === "POST" ? await request.json() : undefined
-      requests.push({ path, authorization: request.headers.get("authorization"), body })
+      requests.push({ path, authorization, body })
       if (state.down) return new Response("unavailable", { status: 503 })
       if (path === "/api/v1/auth/device/code")
         return Response.json({
@@ -87,16 +94,23 @@ function gateway(input: { models?: unknown[]; approveAfter?: number; deny?: bool
           expires_in: 15552000,
           key_id: "key_1",
           base_url: `${url.origin}/api/v1/llm`,
+          account: "+98912•••0001",
         })
       }
       if (path === "/api/v1/llm/usage/summary") {
         state.balance -= 3
-        return Response.json({ balance: { available: state.balance, reserved: 0 } })
+        return Response.json({
+          balance: { credits: state.balance, reserved: 0, available: state.balance },
+          pendingCredits: 0,
+        })
       }
       if (path === "/api/v1/llm/models") {
-        if (request.headers.get("authorization") !== `Bearer ${key}`)
-          return Response.json({ error: { code: "invalid_api_key", message: "no" } }, { status: 401 })
-        return Response.json({ object: "list", data: state.models })
+        if (stage === "off")
+          return Response.json({ error: { code: "not_found", type: "invalid_request_error" } }, { status: 404 })
+        const signedIn = authorization === `Bearer ${key}`
+        if (!signedIn && (stage !== "everyone" || authorization))
+          return Response.json({ error: { code: "invalid_api_key", type: "authentication_error" } }, { status: 401 })
+        return Response.json({ object: "list", data: signedIn ? [sonnet, flash, opus] : [sonnet, flash] })
       }
       return new Response("Not found", { status: 404 })
     },
@@ -121,9 +135,12 @@ const addPlugin = Effect.fn(function* () {
   return host
 })
 
-const hamzadModels = Effect.gen(function* () {
+const offered = Effect.gen(function* () {
   const models = yield* Model.Service
-  return (yield* models.available()).filter((model) => model.providerID === HamzadModels.providerID)
+  return (yield* models.available())
+    .filter((model) => model.providerID === HamzadModels.providerID)
+    .map((model) => String(model.id))
+    .toSorted()
 })
 
 describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
@@ -143,19 +160,40 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
     ),
   )
 
-  it.live("has no models and is not offered while signed out", () =>
+  it.live("lists the models that need no plan before anyone signs in", () =>
     served({}, (started) =>
       Effect.gen(function* () {
         yield* addPlugin()
+        // A first start has nothing saved, so the list is there as soon as the plugin is.
+        expect(yield* offered).toEqual(["claude-sonnet", "deepseek"])
+        expect(started.requests.filter((request) => request.path.endsWith("/llm/models"))).toEqual([
+          { path: "/api/v1/llm/models", authorization: null, body: undefined },
+        ])
+        const model = yield* Model.Service
+        expect((yield* model.default())?.id).toBe(Model.ID.make("claude-sonnet"))
         const providers = yield* Provider.Service
-        expect((yield* providers.available()).map((provider) => provider.id)).not.toContain(HamzadModels.providerID)
-        expect(yield* hamzadModels).toEqual([])
-        expect(started.requests.filter((request) => request.path.endsWith("/llm/models"))).toEqual([])
+        expect(yield* providers.get(HamzadModels.providerID)).toMatchObject({
+          name: "Hamzad",
+          package: "@opencode/ai/providers/openai-compatible",
+          settings: { baseURL: `${started.api}/llm` },
+          headers: { "x-hamzad-cost-unit": "credit" },
+        })
       }),
     ),
   )
 
-  it.live("signs in by approving the device and then lists the gateway's models", () =>
+  for (const stage of ["staff", "off"] as const)
+    it.live(`has no list, quietly, while the gateway is ${stage === "off" ? "off" : "not yet open to everyone"}`, () =>
+      served({ stage }, (started) =>
+        Effect.gen(function* () {
+          yield* addPlugin()
+          expect(yield* offered).toEqual([])
+          expect(started.requests.filter((request) => request.path.endsWith("/llm/models")).length).toBe(1)
+        }),
+      ),
+    )
+
+  it.live("signs in by approving the device, is labelled with the account, and lists what the account may use", () =>
     served({ approveAfter: 2 }, (started) =>
       Effect.gen(function* () {
         yield* addPlugin()
@@ -176,28 +214,25 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
         expect(code?.body).toMatchObject({ client_id: "hamzad-cli" })
         expect(started.state.polls).toBe(3)
         const credentials = yield* Credential.Service
-        expect((yield* credentials.list(HamzadPlugin.integrationID))[0]?.value).toEqual(
+        const saved = (yield* credentials.list(HamzadPlugin.integrationID))[0]
+        expect(saved?.label).toBe("+98912•••0001")
+        expect(saved?.value).toEqual(
           Credential.OAuth.make({
             type: "oauth",
             methodID: Integration.MethodID.make("device"),
             access: key,
             refresh: "",
             expires: 0,
-            metadata: { server: started.api, keyID: "key_1" },
+            metadata: { server: started.api, keyID: "key_1", account: "+98912•••0001" },
           }),
         )
 
-        const models = yield* eventually(hamzadModels, (models) => models.length === 2)
-        expect(models.map((model) => String(model.id)).toSorted()).toEqual(["claude-sonnet", "deepseek"])
-        const model = yield* Model.Service
-        expect((yield* model.default())?.id).toBe(Model.ID.make("claude-sonnet"))
-        const providers = yield* Provider.Service
-        expect(yield* providers.get(HamzadModels.providerID)).toMatchObject({
-          name: "Hamzad",
-          package: "@opencode/ai/providers/openai-compatible",
-          settings: { baseURL: `${started.api}/llm` },
-          headers: { "x-hamzad-cost-unit": "credit" },
-        })
+        // Signing in asks again, now with the key, and the models that need a plan appear.
+        expect(yield* eventually(offered, (models) => models.length === 3)).toEqual([
+          "claude-opus",
+          "claude-sonnet",
+          "deepseek",
+        ])
       }),
     ),
   )
@@ -228,13 +263,14 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
       withEnv({ HAMZAD_API_KEY: key }, () =>
         Effect.gen(function* () {
           const host = yield* addPlugin()
-          yield* eventually(hamzadModels, (models) => models.length === 2)
+          expect(yield* offered).toEqual(["claude-opus", "claude-sonnet", "deepseek"])
+          expect(started.requests.at(-1)).toMatchObject({ path: "/api/v1/llm/models", authorization: `Bearer ${key}` })
           expect(yield* host.storage.get("models")).toMatchObject({
             api: started.api,
-            models: [{ id: "claude-sonnet" }, { id: "deepseek" }],
+            models: [{ id: "claude-sonnet" }, { id: "deepseek" }, { id: "claude-opus" }],
           })
 
-          // A later start reads what the earlier one saved before it hears from the gateway.
+          // A later start shows what the earlier one saved without waiting for the gateway.
           started.state.down = true
           const plugin = yield* Plugin.Service
           const second = yield* PluginHost.make(plugin, "test")
@@ -249,24 +285,21 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
 
   it.live("sends titles to the model the gateway marks as small", () =>
     served({}, () =>
-      withEnv({ HAMZAD_API_KEY: key }, () =>
-        Effect.gen(function* () {
-          yield* addPlugin()
-          yield* eventually(hamzadModels, (models) => models.length === 2)
-          const hooks = yield* PluginHooks.Service
-          const resolve = (kind: "title" | "primary") =>
-            hooks
-              .trigger("session", "experimental.model.resolve", {
-                sessionID: Session.ID.make("ses_hamzad"),
-                agent: Agent.ID.make("title"),
-                kind,
-                model: Model.Ref.make({ providerID: HamzadModels.providerID, id: Model.ID.make("claude-sonnet") }),
-              })
-              .pipe(Effect.map((event) => event.model.id))
-          expect(yield* resolve("title")).toBe(Model.ID.make("deepseek"))
-          expect(yield* resolve("primary")).toBe(Model.ID.make("claude-sonnet"))
-        }),
-      ),
+      Effect.gen(function* () {
+        yield* addPlugin()
+        const hooks = yield* PluginHooks.Service
+        const resolve = (kind: "title" | "primary") =>
+          hooks
+            .trigger("session", "experimental.model.resolve", {
+              sessionID: Session.ID.make("ses_hamzad"),
+              agent: Agent.ID.make("title"),
+              kind,
+              model: Model.Ref.make({ providerID: HamzadModels.providerID, id: Model.ID.make("claude-sonnet") }),
+            })
+            .pipe(Effect.map((event) => event.model.id))
+        expect(yield* resolve("title")).toBe(Model.ID.make("deepseek"))
+        expect(yield* resolve("primary")).toBe(Model.ID.make("claude-sonnet"))
+      }),
     ),
   )
 
@@ -289,20 +322,24 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
     ),
   )
 
-  it.live("says what to do when the gateway refuses a request", () =>
+  it.live("says how to sign in when the gateway wants a key, and leaves every other refusal in its words", () =>
     served({}, () =>
       Effect.gen(function* () {
         yield* addPlugin()
         const hooks = yield* PluginHooks.Service
-        const refused = (status: number, error: Record<string, unknown>, headers?: Record<string, string>) =>
+        const refused = (
+          status: number,
+          error: Record<string, unknown>,
+          headers: { request?: Record<string, string>; response?: Record<string, string> } = {},
+        ) =>
           hooks
             .trigger("session", "http.response", {
               sessionID: Session.ID.make("ses_hamzad"),
               agent: Agent.ID.make("build"),
               model: Model.Ref.make({ providerID: HamzadModels.providerID, id: Model.ID.make("claude-sonnet") }),
               kind: "primary",
-              request: new Request("https://hamzad.ai/api/v1/llm/chat/completions"),
-              response: Response.json({ error, request_id: "req_1" }, { status, headers }),
+              request: new Request("https://hamzad.ai/api/v1/llm/chat/completions", { headers: headers.request }),
+              response: Response.json({ error }, { status, headers: headers.response }),
             })
             .pipe(
               Effect.flatMap((event) =>
@@ -313,35 +350,47 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
                 })),
               ),
             )
+        const noKey = {
+          code: "invalid_api_key",
+          type: "authentication_error",
+          message: "Missing or invalid API key. Sign in again, or make a key in the Hamzad panel.",
+        }
 
-        expect<unknown>(
-          yield* refused(401, { code: "invalid_api_key", type: "authentication_error", message: "Invalid key" }),
-        ).toEqual({
+        expect<unknown>(yield* refused(401, noKey)).toEqual({
           status: 401,
           retry: null,
           error: {
             code: "invalid_api_key",
             type: "authentication_error",
-            message: "Hamzad did not accept this sign-in. Run `hamzad auth login` to sign in again.",
+            message: "You are not signed in to Hamzad. Run `hamzad auth login` and approve this device in your panel.",
           },
         })
-        expect(
-          (yield* refused(402, { code: "insufficient_quota", type: "insufficient_quota", needed: 310, available: 12 }))
-            .error.message,
-        ).toBe(
-          "Not enough Hamzad credits for this request (it may need up to 310, 12 available). Top up at https://hamzad.ai/panel/billing",
+        expect((yield* refused(401, noKey, { request: { authorization: `Bearer ${key}` } })).error.message).toBe(
+          "Hamzad did not accept this sign-in. Run `hamzad auth login` to sign in again.",
         )
-        // Anything without advice of its own keeps the gateway's wording, its status and its wait.
-        expect<unknown>(
-          yield* refused(
-            429,
-            { code: "rate_limit_exceeded", type: "rate_limit_error", message: "Too many requests." },
-            { "retry-after": "7" },
-          ),
-        ).toEqual({
+
+        // The gateway's own text already carries the numbers and where to top up.
+        const short = {
+          code: "insufficient_quota",
+          type: "insufficient_quota",
+          message:
+            "Not enough credits: this request needs 310 spendable, 12 are. Top up at https://hamzad.ai/panel/billing",
+          needed: 310,
+          available: 12,
+        }
+        expect<unknown>(yield* refused(402, short)).toEqual({ status: 402, retry: null, error: short })
+        const day = {
+          code: "daily_spend_limit",
+          type: "insufficient_quota",
+          message: "Today's usage limit of 800 credits is reached. It starts over at midnight, Tehran time.",
+          limit: 800,
+        }
+        expect<unknown>(yield* refused(402, day)).toEqual({ status: 402, retry: null, error: day })
+        const busy = { code: "rate_limit_exceeded", type: "rate_limit_error", message: "Too many requests." }
+        expect<unknown>(yield* refused(429, busy, { response: { "retry-after": "7" } })).toEqual({
           status: 429,
           retry: "7",
-          error: { code: "rate_limit_exceeded", type: "rate_limit_error", message: "Too many requests." },
+          error: busy,
         })
       }),
     ),
@@ -356,14 +405,14 @@ describe("HamzadModels", () => {
       providerID: "hamzad",
       name: "Claude Sonnet 5.5",
       family: "claude-sonnet",
+      compatibility: { cacheFormat: "anthropic" },
       capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
       variants: [
         { id: "low", settings: { reasoningEffort: "low" } },
         { id: "medium", settings: { reasoningEffort: "medium" } },
         { id: "high", settings: { reasoningEffort: "high" } },
       ],
-      time: { released: Date.parse("2026-09-01") },
-      cost: [{ input: 1935.5, output: 9677.4, cache: { read: 193.5, write: 2419.4 } }],
+      cost: [{ input: 1271.4919, output: 6357.4594, cache: { read: 127.1492, write: 1589.3648 } }],
       limit: { context: 200000, output: 32000 },
     })
     expect(sparse).toMatchObject({
@@ -375,11 +424,14 @@ describe("HamzadModels", () => {
       cost: [],
       limit: { context: 200000, output: 32000 },
     })
+    expect(sparse?.compatibility).toBeUndefined()
   })
 
-  test("a cache price the gateway leaves out is the input price", () => {
-    expect<unknown>(HamzadModels.derive([flash])[0]?.cost).toEqual([
-      { input: 180, output: 720, cache: { read: 180, write: 180 } },
+  test("a cache price the gateway leaves out is the input price, and no cache format means no markers", () => {
+    const [model] = HamzadModels.derive([flash])
+    expect<unknown>(model?.cost).toEqual([
+      { input: 190.7238, output: 762.8951, cache: { read: 190.7238, write: 190.7238 } },
     ])
+    expect(model?.compatibility).toBeUndefined()
   })
 })

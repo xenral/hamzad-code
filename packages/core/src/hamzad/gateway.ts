@@ -45,21 +45,26 @@ export const Models = Schema.Array(Model)
 
 const decodeModel = Schema.decodeUnknownOption(Model)
 
-/** The models this account may use, in the gateway's order. One malformed entry never discards the rest. */
+/**
+ * The models on offer, in the gateway's order: with a key, the ones that account may use; without,
+ * the ones that need no plan. `undefined` when the gateway gives no list yet: it asks for a key
+ * until it serves everyone (401), and is not there at all while it is switched off (404).
+ * One malformed entry never discards the rest.
+ */
 export const models = Effect.fn("HamzadGateway.models")(function* (
   http: HttpClient.HttpClient,
   api: string,
-  key: string,
+  key: string | undefined,
 ) {
-  const response = yield* HttpClient.filterStatusOk(http)
-    .execute(
-      HttpClientRequest.get(`${api}/llm/models`).pipe(HttpClientRequest.acceptJson, HttpClientRequest.bearerToken(key)),
-    )
-    .pipe(
-      Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Struct({ data: Schema.Array(Schema.Unknown) }))),
-      Effect.timeout("10 seconds"),
-    )
-  return response.data.flatMap((raw) => {
+  const request = HttpClientRequest.get(`${api}/llm/models`).pipe(HttpClientRequest.acceptJson)
+  const response = yield* http
+    .execute(key ? request.pipe(HttpClientRequest.bearerToken(key)) : request)
+    .pipe(Effect.timeout("10 seconds"))
+  if (response.status === 401 || response.status === 404) return undefined
+  const list = yield* HttpClientResponse.filterStatusOk(response).pipe(
+    Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Struct({ data: Schema.Array(Schema.Unknown) }))),
+  )
+  return list.data.flatMap((raw) => {
     const model = Option.getOrUndefined(decodeModel(raw))
     return model ? [model] : []
   })
@@ -78,6 +83,8 @@ const Token = Schema.Struct({
   access_token: Schema.String,
   expires_in: maybe(Schema.Number),
   key_id: maybe(Schema.String),
+  // Whose account it is, masked by the gateway: enough to tell two sign-ins apart.
+  account: maybe(Schema.String),
 })
 const Pending = Schema.Struct({ error: Schema.String })
 
@@ -156,9 +163,6 @@ export const Refusal = Schema.Struct({
     code: maybe(Schema.String),
     type: maybe(Schema.String),
     message: maybe(Schema.String),
-    needed: maybe(Schema.Number),
-    available: maybe(Schema.Number),
-    details: maybe(Schema.Struct({ needed: maybe(Schema.Number), available: maybe(Schema.Number) })),
   }),
 })
 export type Refusal = typeof Refusal.Type

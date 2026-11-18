@@ -45,31 +45,6 @@ export const Plugin = define({
     const client = yield* HttpClient.HttpClient
     const http = HttpClient.mapRequest(client, HttpClientRequest.setHeader("User-Agent", App.useragent(ctx.app)))
 
-    const saved = Option.getOrUndefined(decodeSaved(yield* ctx.storage.get("models")))
-    const discovered = yield* ProviderRefresh.start({
-      integrationID,
-      initial: saved?.api === api ? saved.models : [],
-      active: ctx.integration.connection.active(integrationID),
-      reload: ctx.provider.reload(),
-      load: Effect.fn("HamzadPlugin.load")(function* (current, options) {
-        const { connection, credential } = yield* activeCredential(ctx, integrationID)
-        const key = secret(credential)
-        // Signed out, the last list stays: it is what the person sees again after signing in.
-        if (!key) return { connection, value: current }
-        const loaded = yield* cache
-          .get({
-            key: `hamzad:${api}:${SharedCache.fingerprint(key)}`,
-            ...options,
-            load: HamzadGateway.models(http, api, key),
-          })
-          .pipe(Effect.option)
-        if (Option.isNone(loaded)) return { connection, value: current }
-        if (!Equal.equals(loaded.value, current))
-          yield* ctx.storage.set("models", encodeSaved({ api, models: loaded.value }))
-        return { connection, value: loaded.value }
-      }),
-    })
-
     yield* ctx.integration.transform((editor) => {
       editor.update(integrationID, (integration) => {
         integration.name = Brand.name
@@ -79,13 +54,58 @@ export const Plugin = define({
       editor.method.update({ integrationID, method: { type: "env", names: [keyVariable] } })
     })
 
+    // With a key the gateway lists what that account may use; without one, the models that need no
+    // plan, so a person sees the models and their prices before signing in.
+    const list = Effect.fn("HamzadPlugin.list")(function* (options: ProviderRefresh.Options) {
+      const { connection, credential } = yield* activeCredential(ctx, integrationID)
+      const key = secret(credential)
+      const models = yield* cache
+        .get({
+          key: `hamzad:models:${api}:${key ? SharedCache.fingerprint(key) : "signed-out"}`,
+          ...options,
+          load: HamzadGateway.models(http, api, key),
+        })
+        .pipe(Effect.orElseSucceed(() => undefined))
+      return { connection, models }
+    })
+
+    const remember = (models: typeof HamzadGateway.Models.Type) =>
+      ctx.storage.set("models", encodeSaved({ api, models }))
+
+    const saved = Option.getOrUndefined(decodeSaved(yield* ctx.storage.get("models")))
+    // The very first start has nothing saved, so it waits a moment for the list instead of opening
+    // with no models. Every later start shows the saved list at once and refreshes it behind.
+    const first =
+      saved?.api === api
+        ? saved.models
+        : yield* list({}).pipe(
+            Effect.map((loaded) => loaded.models),
+            Effect.timeoutOrElse({ duration: "4 seconds", orElse: () => Effect.undefined }),
+            Effect.tap((models) => (models ? remember(models) : Effect.void)),
+          )
+    const discovered = yield* ProviderRefresh.start({
+      integrationID,
+      initial: first ?? [],
+      active: ctx.integration.connection.active(integrationID),
+      reload: ctx.provider.reload(),
+      load: Effect.fn("HamzadPlugin.load")(function* (current, options) {
+        const loaded = yield* list(options)
+        // No list yet, or no network: what is shown stays.
+        if (!loaded.models) return { connection: loaded.connection, value: current }
+        if (!Equal.equals(loaded.models, current)) yield* remember(loaded.models)
+        return { connection: loaded.connection, value: loaded.models }
+      }),
+    })
+
     yield* ctx.provider.transform((providers) => {
       providers.add({
         info: {
           id: HamzadModels.providerID,
           name: Brand.name,
           integrationID,
-          activation: "auto",
+          // Offered before sign-in too: the models and prices are public, and a prompt sent without
+          // a sign-in is answered with how to sign in.
+          activation: "enabled",
           package: "@opencode/ai/providers/openai-compatible",
           settings: { baseURL: `${api}/llm`, provider: HamzadModels.providerID },
           // Asks the gateway to report each request's charge in credits, which is what the footer shows.
@@ -173,49 +193,41 @@ function device(http: HttpClient.HttpClient, api: string) {
                 access: token.access_token,
                 refresh: "",
                 expires: 0,
-                metadata: { server: api, ...(token.key_id ? { keyID: token.key_id } : {}) },
+                metadata: {
+                  server: api,
+                  ...(token.key_id ? { keyID: token.key_id } : {}),
+                  ...(token.account ? { account: token.account } : {}),
+                },
               }),
             ),
           ),
         }
       }),
+    // The account's phone or email, as the gateway masks it.
+    label: (credential) => (typeof credential.metadata?.account === "string" ? credential.metadata.account : undefined),
   } satisfies IntegrationOAuthMethodRegistration
 }
 
-/** What a refusal means for the person, by the gateway's code. The gateway's own text is the fallback. */
-export function message(refusal: HamzadGateway.Refusal["error"]) {
-  const needed = refusal.details?.needed ?? refusal.needed
-  const available = refusal.details?.available ?? refusal.available
-  switch (refusal.code) {
-    case "invalid_api_key":
-      return `Hamzad did not accept this sign-in. Run \`${Brand.cli} auth login\` to sign in again.`
-    case "insufficient_quota":
-      return [
-        "Not enough Hamzad credits for this request",
-        needed != null && available != null ? ` (it may need up to ${needed}, ${available} available)` : "",
-        `. Top up at ${Brand.billing}`,
-      ].join("")
-    case "key_spend_cap":
-      return `This key has reached its spend cap. Raise the cap or make a new key at https://hamzad.ai/panel/settings`
-    case "daily_spend_limit":
-      return "Daily usage limit reached for this account. It resets at midnight, Tehran time."
-    case "access_denied":
-      return "This account cannot use Hamzad's coding models yet."
-    case "plan_required":
-      return `This model needs a higher plan. See ${Brand.billing}`
-    default:
-      return refusal.message ?? undefined
-  }
+/**
+ * What the person can do about a refused sign-in. The gateway's own text says it for any client;
+ * here the command to run is known. Every other refusal keeps the gateway's wording, which already
+ * carries the numbers and where to top up.
+ */
+export function message(code: string | null | undefined, signedIn: boolean) {
+  if (code !== "invalid_api_key") return undefined
+  return signedIn
+    ? `Hamzad did not accept this sign-in. Run \`${Brand.cli} auth login\` to sign in again.`
+    : `You are not signed in to Hamzad. Run \`${Brand.cli} auth login\` and approve this device in your panel.`
 }
 
-// Replaces a refusal's text with what the person can do about it. The status and headers stay, so
-// retries, rate-limit waits and context compaction behave as they do for any provider.
+// The status and headers stay as the gateway sent them, so retries, rate-limit waits and context
+// compaction behave as they do for any provider.
 function explain(event: SessionHttpResponse) {
   return Effect.gen(function* () {
-    if (event.response.status < 400) return
+    if (event.response.status !== 401) return
     const body = yield* Effect.promise(() => event.response.clone().text())
     const refusal = Option.getOrUndefined(decodeRefusal(body))
-    const text = refusal && message(refusal.error)
+    const text = refusal && message(refusal.error.code, event.request.headers.has("authorization"))
     if (!refusal || !text) return
     const headers = new Headers(event.response.headers)
     headers.delete("content-length")
