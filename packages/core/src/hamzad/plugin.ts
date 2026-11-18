@@ -102,8 +102,8 @@ export const Plugin = define({
       models.default.set(HamzadModels.providerID, id)
     })
 
-    // Titles and other small requests go to the model the gateway marks for them, unless the person
-    // gave the title agent a model of their own.
+    // A session's title is written by the model the gateway marks as small, unless the person gave
+    // the title agent a model of their own.
     yield* ctx.session.hook(
       "experimental.model.resolve",
       (event) =>
