@@ -24,8 +24,8 @@ interface Profile {
   /** Ports of the managed background service, by release channel. */
   readonly port: { readonly latest: number; readonly local: number }
   readonly docs: string
-  /** Where a crash report form opens. `version` is the running build. */
-  readonly report: (version: string) => URL
+  /** Scope of the npm packages a build is published under. */
+  readonly scope: string
   readonly update: {
     /** The npm package name a global npm install carries. */
     readonly package: RegExp
@@ -60,11 +60,7 @@ const upstream: Profile = {
   tag: "OC",
   port: { latest: 0xc0de, local: 0xc0df },
   docs: "https://opencode.ai/docs",
-  report: (version) => {
-    const url = new URL("https://github.com/anomalyco/opencode/issues/new?template=bug-report.yml")
-    url.searchParams.set("opencode-version", version)
-    return url
-  },
+  scope: "@opencode",
   update: {
     package: /^@opencode(?:-ai)?\/cli(?:-node)?$/,
     installer: "https://opencode.ai/v2/install",
@@ -107,7 +103,7 @@ const hamzad: Profile = {
   // so both tools run side by side.
   port: { latest: 0x686d, local: 0x686e },
   docs: `${site}/cli`,
-  report: () => new URL(`${site}/panel/support`),
+  scope: "@hamzad",
   update: {
     package: /^@hamzad\/cli(?:-node)?$/,
     installer: `${site}/cli/install`,
@@ -144,7 +140,7 @@ export const agent = profile.agent
 export const tag = profile.tag
 export const port = profile.port
 export const docs = profile.docs
-export const report = profile.report
+export const scope = profile.scope
 export const update = profile.update
 export const ripgrep = profile.ripgrep
 export const money = profile.money
@@ -160,3 +156,13 @@ export function api() {
 
 /** Where a person adds credits. */
 export const billing = `${site}/panel/billing`
+
+/** Where a crash is reported. It carries the build's version and nothing about the crash itself. */
+export function support(version: string) {
+  const url = new URL(`${site}/panel/support`)
+  url.searchParams.set("cli", version)
+  return url
+}
+
+/** Whether upstream's model catalog is loaded: only when the person points at one. */
+export const catalog = () => !isHamzad || Boolean(process.env.OPENCODE_MODELS_URL || process.env.OPENCODE_MODELS_PATH)
