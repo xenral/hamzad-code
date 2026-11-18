@@ -20,6 +20,20 @@ describe("Hamzad's states in words", () => {
     })
   })
 
+  test("a prompt with no model to go to gets the same reasons, and is told how to sign in", () => {
+    expect(
+      run(
+        `const { HamzadStatus } = await import(${JSON.stringify(status)}); console.log(JSON.stringify(["listed", "sign-in", "unavailable", "no-access", "unreachable"].map((state) => HamzadStatus.prompt(state) ?? null)))`,
+      ),
+    ).toEqual([
+      null,
+      "You are not signed in to Hamzad. Run `hamzad auth login` and approve this device in your panel.",
+      "Hamzad's API for tools is not available yet.",
+      "This account does not have access to Hamzad's API yet.",
+      "Could not reach Hamzad. Check your connection and try again.",
+    ])
+  })
+
   test("a sign-in that cannot go on is worded by its code, with a plain sentence for any other", () => {
     expect(
       run(

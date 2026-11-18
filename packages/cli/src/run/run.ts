@@ -12,6 +12,7 @@ import { runNonInteractivePrompt } from "./noninteractive"
 import { UI } from "./ui"
 import { Env } from "../env"
 import { errorMessage } from "../util/error"
+import { HamzadModelList } from "../hamzad/status"
 
 export type RunCommandInput = {
   server: ServerConnection.Resolved
@@ -84,6 +85,8 @@ async function execute(input: RunCommandInput, prepared: Prepared, endpoint: End
   })
   const explicit = parseRunModel(input.model)
   const location = { directory: prepared.directory }
+  const unavailable = await HamzadModelList.missing(client, prepared.directory, explicit?.model.providerID)
+  if (unavailable) return reportRunError(input, unavailable)
   const worktree =
     input.worktree === undefined
       ? undefined

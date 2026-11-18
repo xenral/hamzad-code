@@ -41,6 +41,9 @@ export function reason(state: State) {
   }
 }
 
+/** One line for a prompt that has no model to go to, for the same reasons. */
+export const prompt = (state: State) => (state === "sign-in" ? signedOut : reason(state))
+
 /**
  * What the sign-in by approving the device says when it cannot go on, by the code the API or the
  * panel gave. These routes answer in the API's own shape, with a Persian message meant for the
