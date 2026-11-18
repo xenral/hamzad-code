@@ -47,7 +47,7 @@ const login = Effect.fn("cli.auth.login.run")(function* (input: {
 }) {
   if (!input.target)
     yield* requireInteractive("Pass an integration ID or name when running without an interactive terminal")
-  intro("Connect an integration")
+  intro(HamzadAuth.heading(input.target) ?? "Connect an integration")
   const client = yield* createClient()
   const integration = yield* findIntegration(client, input.target)
   const methods = connectMethods(integration)
@@ -162,7 +162,9 @@ const keyLogin = Effect.fn("cli.auth.login.key")(function* (
     client.integration.connect.key({ integrationID: integration.id, key, answer, location }, { signal }),
   ).pipe(
     Effect.tap(() => Effect.sync(() => progress.stop(`Connected to ${integration.name}`))),
-    Effect.tapCause(() => Effect.sync(() => progress.stop("Authentication failed", 1))),
+    Effect.tapCause(() =>
+      Effect.sync(() => progress.stop(HamzadAuth.failed(integration.id) ?? "Authentication failed", 1)),
+    ),
   )
 })
 
@@ -180,7 +182,11 @@ export const oauthLogin = Effect.fn("cli.auth.login.oauth")(function* (
       { integrationID: integration.id, methodID: method.id, answer, label, location },
       { signal },
     ),
-  ).pipe(Effect.tapCause(() => Effect.sync(() => progress.stop("Authentication failed", 1))))
+  ).pipe(
+    Effect.tapCause(() =>
+      Effect.sync(() => progress.stop(HamzadAuth.failed(integration.id) ?? "Authentication failed", 1)),
+    ),
+  )
   const attempt = started.data
   yield* Effect.addFinalizer(() =>
     request(() =>

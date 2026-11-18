@@ -24,6 +24,15 @@ describe.skipIf(!Brand.isHamzad)("Hamzad's auth commands", () => {
     expect(HamzadAuth.method("exa", undefined)).toBeUndefined()
   })
 
+  test("a sign-in to Hamzad is called a sign-in; other integrations keep upstream's words", () => {
+    expect(HamzadAuth.heading("hamzad")).toBe("Sign in to Hamzad")
+    expect(HamzadAuth.heading("Hamzad")).toBe("Sign in to Hamzad")
+    expect(HamzadAuth.heading("exa")).toBeUndefined()
+    expect(HamzadAuth.heading(undefined)).toBeUndefined()
+    expect(HamzadAuth.failed("hamzad")).toBe("Sign-in failed")
+    expect(HamzadAuth.failed("exa")).toBeUndefined()
+  })
+
   test("logout takes the one stored Hamzad sign-in without asking", async () => {
     expect(await Effect.runPromise(HamzadAuth.only(integration("hamzad", [stored("cred_1", "+98912•••0001")])))).toBe(
       "cred_1",

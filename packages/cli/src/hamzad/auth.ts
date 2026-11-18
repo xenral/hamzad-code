@@ -21,6 +21,13 @@ export const target = (given: string | undefined) => given ?? integration
 export const method = (integrationID: string, given: string | undefined) =>
   given ?? (integrationID === integration ? "device" : undefined)
 
+/** The heading of a sign-in to Hamzad. Upstream's speaks of connecting an integration. */
+export const heading = (given: string | undefined) =>
+  integration && given?.toLowerCase() === integration ? `Sign in to ${Brand.name}` : undefined
+
+/** What a failed sign-in to Hamzad is called. */
+export const failed = (integrationID: string) => (integrationID === integration ? "Sign-in failed" : undefined)
+
 /**
  * The stored Hamzad sign-in to remove when none was named: the only one there is. With several, a
  * person has to pick, which needs a terminal; with none, the caller says so.
