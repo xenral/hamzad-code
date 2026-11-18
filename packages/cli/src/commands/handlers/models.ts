@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import { EOL } from "node:os"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
+import { HamzadModelList } from "../../hamzad/status"
 import { ServerConnection } from "../../services/server-connection"
 import { waitForPlugins } from "../../services/plugin-startup"
 
@@ -21,5 +22,6 @@ export default Runtime.handler(
       .map((model) => `${model.providerID}/${model.id}`)
       .toSorted((a, b) => a.localeCompare(b))
     if (models.length > 0) process.stdout.write(models.join(EOL) + EOL)
+    yield* HamzadModelList.explain(client, process.cwd(), models)
   }),
 )
