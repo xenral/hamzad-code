@@ -1,8 +1,9 @@
 // The CLI, end to end, against the stand-in gateway: sign in by approving the device, send a prompt
 // that needs a tool, and check what came back, what it cost and where the CLI connected.
 //
-//   bun hamzad/test/e2e.ts                      the CLI from source
+//   bun hamzad/test/e2e.ts                        the CLI from source
 //   bun hamzad/test/e2e.ts --bin dist/.../hamzad  a built binary
+//   … --rg path/to/rg                             also search with this ripgrep, as an install provides it
 //
 // Every directory the CLI writes is a temporary one, so a real install is never touched.
 
@@ -14,6 +15,8 @@ import { key, start } from "./mock-gateway"
 const root = path.join(import.meta.dir, "../..")
 const flag = process.argv.indexOf("--bin")
 const bin = flag === -1 ? undefined : path.resolve(process.argv[flag + 1])
+const rgFlag = process.argv.indexOf("--rg")
+const rg = rgFlag === -1 ? undefined : path.resolve(process.argv[rgFlag + 1])
 const cli = bin ? [bin] : [process.execPath, "run", "--cwd", path.join(root, "packages/cli"), "src/index.ts"]
 
 const failures: string[] = []
@@ -27,6 +30,13 @@ const project = path.join(home, "project")
 await fs.mkdir(project, { recursive: true })
 await fs.mkdir(path.join(home, "tmp"))
 await fs.writeFile(path.join(project, "NOTES.txt"), "zanbagh is the first word of this note\n")
+// The installer puts ripgrep where only the CLI looks for it; with it there, a search needs no download.
+if (rg) {
+  const tools = path.join(home, "cache", "hamzad", "bin")
+  await fs.mkdir(tools, { recursive: true })
+  await fs.copyFile(rg, path.join(tools, path.basename(rg)))
+  await fs.chmod(path.join(tools, path.basename(rg)), 0o755)
+}
 
 // Anything the CLI sends to a host other than this machine goes through here, is written down, and is refused.
 const outside: string[] = []
@@ -182,6 +192,24 @@ try {
     spent > 0 && spent <= gateway.state.spent + 1e-9,
     { spent, charged: gateway.state.spent },
   )
+
+  if (rg) {
+    const search = await run([
+      "run",
+      "--standalone",
+      "--auto",
+      "--format",
+      "json",
+      `Find the note. [[tool:grep ${JSON.stringify({ pattern: "zanbagh", path: project })}]]`,
+    ])
+    check(
+      "a search runs with the ripgrep an install provides",
+      events(search.stdout).some(
+        (event) => event.type === "tool_use" && event.part?.tool === "grep" && event.part.state?.status === "completed",
+      ) && events(search.stdout).some((event) => event.type === "text" && event.part?.text?.includes("NOTES.txt")),
+      { code: search.code, stderr: search.stderr.slice(-400) },
+    )
+  }
 
   const refused = await run([
     "run",
