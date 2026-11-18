@@ -1,0 +1,241 @@
+name: hamzad-release
+
+# Builds, checks and publishes the Hamzad CLI when a tag `hamzad-v<version>` is pushed, e.g.
+# `hamzad-v2.3.2-hamzad.1`. The version is the upstream version this build is based on, then
+# `-hamzad.<n>`. (No `+build` metadata: the updater ignores it and would offer no update.)
+#
+#   build     every platform's binary, on one Linux runner
+#   sign      the macOS binaries get an ad-hoc signature, which Apple Silicon requires to run them
+#   pack      archives with ripgrep inside, checksums, latest.json, the installer and the mirrors
+#   smoke     each platform installs its archive and runs the end-to-end check against the stand-in gateway
+#   release   a GitHub Release with everything, always
+#   publish   uploads the same files to where hamzad.ai/cli is served from, when the secrets for it exist
+on:
+  push:
+    tags: ["hamzad-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build without publishing, e.g. 2.3.2-hamzad.1"
+        required: true
+
+concurrency:
+  group: hamzad-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  BUN_VERSION: 1.4.4
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - id: version
+        name: Read the version
+        run: |
+          version="${INPUT_VERSION:-${GITHUB_REF_NAME#hamzad-v}}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-hamzad\.[0-9]+$ ]]; then
+            echo "::error::'$version' is not <upstream version>-hamzad.<n>"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+      - name: Set up Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Build
+        working-directory: packages/cli
+        run: bun run script/build.ts --skip-web-ui && rm -rf dist/.bun
+        env:
+          OPENCODE_CHANNEL: latest
+          OPENCODE_VERSION: ${{ steps.version.outputs.version }}
+          BUN_COMPILE_RELEASE: bun-v${{ env.BUN_VERSION }}
+          GH_TOKEN: ${{ github.token }} # read-only; raises the rate limit for Bun release downloads
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build
+          path: packages/cli/dist
+          retention-days: 3
+
+  sign:
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          sparse-checkout: /.github/release/entitlements/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: build
+          path: dist
+      # Ad hoc, not a Developer ID: enough for the binary to start, and for an install by curl, which
+      # sets no quarantine flag. A download through a browser is still stopped by Gatekeeper.
+      - name: Sign the macOS binaries
+        run: |
+          for directory in dist/cli-darwin-*; do
+            binary="$directory/bin/hamzad"
+            file -b "$binary" | grep -q '^Mach-O' || { echo "::error::$binary is not a Mach-O binary"; exit 1; }
+            chmod 755 "$binary"
+            codesign --force --timestamp=none --options runtime \
+              --entitlements .github/release/entitlements/cli.plist --sign - "$binary"
+            codesign --verify --strict --verbose=2 "$binary"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-signed
+          path: dist
+          retention-days: 3
+
+  pack:
+    needs: [build, sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: build-signed
+          path: packages/cli/dist
+      - name: Pack
+        run: bun hamzad/script/pack.ts --version "$VERSION"
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: site
+          path: dist/hamzad
+          retention-days: 14
+
+  smoke:
+    needs: [build, pack]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { host: ubuntu-24.04, target: linux-x64 }
+          - { host: ubuntu-24.04-arm, target: linux-arm64 }
+          - { host: macos-latest, target: darwin-arm64 }
+          - { host: macos-15-intel, target: darwin-x64 }
+          - { host: windows-latest, target: windows-x64 }
+    runs-on: ${{ matrix.host }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup-bun
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: site
+          path: site
+      # The installer itself, served from this machine, so what is checked is what a person runs.
+      - name: Install from the packed files
+        run: |
+          bun hamzad/test/serve.ts site 8765 &
+          sleep 2
+          HAMZAD_CLI_URL=http://127.0.0.1:8765 bash site/install --no-modify-path
+          "$HOME/.hamzad/bin/hamzad" --version | grep -F "$VERSION"
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+      - name: End to end, against the stand-in gateway, with no outside host allowed
+        run: |
+          exe="${{ runner.os == 'Windows' && '.exe' || '' }}"
+          bun hamzad/test/e2e.ts --bin "$HOME/.hamzad/bin/hamzad$exe" --rg "${XDG_CACHE_HOME:-$HOME/.cache}/hamzad/bin/rg$exe"
+
+  release:
+    needs: [build, pack, smoke]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: site
+          path: site
+      - name: Publish the GitHub Release
+        run: |
+          cp site/latest.json site/install "site/v/$VERSION/"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Hamzad CLI $VERSION" \
+            --notes "Built on OpenCode ${VERSION%%-hamzad.*}. Install: \`curl -fsSL https://hamzad.ai/cli/install | bash\`" \
+            "site/v/$VERSION"/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+
+  # TODO(ali): confirm — where hamzad.ai/cli is served from. This assumes a directory on the box
+  # that Caddy serves at /cli/*, filled over the same SSH path the deploy uses. With the secrets
+  # absent the job does nothing and the GitHub Release above is the only place the files are.
+  publish:
+    needs: [build, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - id: target
+        name: Is a place to publish to configured?
+        run: |
+          if [ -n "$DEPLOY_SSH_KEY" ] && [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ] && [ -n "$DEPLOY_KNOWN_HOSTS" ] && [ -n "$CLI_DIST_PATH" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No deploy secrets: the files are in the GitHub Release only."
+          fi
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          CLI_DIST_PATH: ${{ secrets.CLI_DIST_PATH }}
+      - if: steps.target.outputs.configured == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: site
+          path: site
+      - if: steps.target.outputs.configured == 'true'
+        name: Upload
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host box\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  ServerAliveInterval 30\n' \
+            "$DEPLOY_HOST" "$DEPLOY_USER" > ~/.ssh/config
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts ~/.ssh/config
+          ssh box "mkdir -p '$CLI_DIST_PATH/v' '$CLI_DIST_PATH/mirror'"
+          # The archives and mirrors first; the installer and latest.json last, so nobody is pointed
+          # at a version whose files are not there yet.
+          rsync -a --partial "site/v/$VERSION" "box:$CLI_DIST_PATH/v/"
+          rsync -a --partial site/mirror/ "box:$CLI_DIST_PATH/mirror/"
+          rsync -a site/install "box:$CLI_DIST_PATH/install"
+          rsync -a site/latest.json "box:$CLI_DIST_PATH/latest.json"
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          CLI_DIST_PATH: ${{ secrets.CLI_DIST_PATH }}
+          VERSION: ${{ needs.build.outputs.version }}

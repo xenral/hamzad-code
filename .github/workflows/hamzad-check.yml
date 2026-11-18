@@ -1,0 +1,47 @@
+name: hamzad-check
+
+# What a change to the Hamzad CLI must pass. Upstream's own tests assert upstream's names, so they
+# run under the upstream brand profile, which also proves the edits to upstream's files only move
+# values into the brand module. Hamzad's tests and the end-to-end check run as the build ships.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: hamzad-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup-bun
+      - name: ripgrep, which the search tests run
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      - name: Lint
+        run: bun run lint
+      - name: Typecheck
+        run: bun turbo typecheck:tsc --concurrency=3 --filter=@opencode/util --filter=@opencode/core --filter=@opencode/plugin --filter=@opencode/server --filter=@opencode/cli --filter=@opencode/tui
+      - name: Upstream's tests, with upstream's names
+        run: bun turbo test --concurrency=2 --filter=@opencode/util --filter=@opencode/core --filter=@opencode/plugin --filter=@opencode/server --filter=@opencode/cli --filter=@opencode/tui
+        env:
+          HAMZAD_BRAND: upstream
+      - name: Hamzad's tests
+        run: |
+          (cd packages/util && bun test test/hamzad)
+          (cd packages/core && bun run test test/hamzad)
+      - name: End to end, from source, with no outside host allowed
+        run: bun hamzad/test/e2e.ts --rg "$(command -v rg)"
