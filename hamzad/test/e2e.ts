@@ -124,15 +124,34 @@ try {
   const version = await run(["--version"])
   check("the command answers to its own name", version.code === 0 && /^hamzad /.test(version.stdout.trim()), version)
 
-  // Signed out, a prompt has no model to go to.
-  const signedOut = await run(["run", "--standalone", "--auto", "--format", "json", "hello"])
-  check("signed out, nothing is sent to the gateway's chat route", signedOut.code !== 0, {
-    code: signedOut.code,
-    stderr: signedOut.stderr.slice(-300),
-  })
+  // A first run, before any sign-in: the models and their prices are there to see.
+  const listed = await run(["models", "--standalone"])
   check(
-    "signed out, no chat request reached the gateway",
-    !gateway.requests.some((request) => request.path === "/llm/chat/completions"),
+    "signed out, the models that need no plan are listed",
+    listed.code === 0 &&
+      ["hamzad/claude-sonnet", "hamzad/claude-haiku", "hamzad/deepseek"].every((id) => listed.stdout.includes(id)) &&
+      !listed.stdout.includes("hamzad/claude-opus"),
+    { code: listed.code, stdout: listed.stdout.slice(-400), stderr: listed.stderr.slice(-300) },
+  )
+  check(
+    "signed out, the list was asked for with no credential",
+    gateway.requests.some((request) => request.path === "/llm/models" && request.authorization === null),
+  )
+
+  const signedOut = await run(["run", "--standalone", "--auto", "--format", "json", "hello"])
+  check(
+    "signed out, a prompt is answered with how to sign in",
+    signedOut.code !== 0 && (signedOut.stdout + signedOut.stderr).includes("hamzad auth login"),
+    { code: signedOut.code, output: (signedOut.stdout + signedOut.stderr).slice(-400) },
+  )
+  // The prompt and its title are each asked for; neither is sent a second time.
+  const unsigned = gateway.requests.filter((request) => request.path === "/llm/chat/completions")
+  check(
+    "signed out, what reached the gateway carried no credential and the prompt was not sent again",
+    unsigned.length > 0 &&
+      unsigned.every((request) => request.authorization === null) &&
+      unsigned.filter((request) => request.body?.tools.length).length === 1,
+    unsigned.map((request) => ({ model: request.body?.model, tools: request.body?.tools.length })),
   )
 
   const login = await run(["auth", "login", "hamzad", "--method", "device", "--standalone"])
@@ -145,6 +164,19 @@ try {
   check(
     "the gateway was asked for a code and polled until approved",
     gateway.requests.filter((request) => request.path === "/auth/device/token").length === 2,
+  )
+
+  const accounts = await run(["auth", "list", "--standalone"])
+  check(
+    "the sign-in is listed under the account the gateway named",
+    (accounts.stdout + accounts.stderr).includes("+98912•••0001"),
+    (accounts.stdout + accounts.stderr).slice(-400),
+  )
+  const all = await run(["models", "--standalone"])
+  check(
+    "signed in, the list also holds the models that need a plan",
+    all.stdout.includes("hamzad/claude-opus") && all.stdout.includes("hamzad/claude-sonnet"),
+    all.stdout.slice(-400),
   )
 
   const prompt = `Read NOTES.txt and say what it holds. [[tool:read ${JSON.stringify({ path: path.join(project, "NOTES.txt") })}]]`
@@ -168,7 +200,10 @@ try {
     steps.map((step) => step.part),
   )
 
-  const chats = gateway.requests.filter((request) => request.path === "/llm/chat/completions")
+  // The one request sent before signing in is not part of what follows.
+  const chats = gateway.requests.filter(
+    (request) => request.path === "/llm/chat/completions" && request.authorization !== null,
+  )
   const turns = chats.filter((request) => request.body?.tools.includes("read"))
   check(
     "the gateway got the key the device was given",
@@ -201,8 +236,13 @@ try {
     turns.map((turn) => turn.body?.opening),
   )
   check(
+    "the prompt went to the gateway's default model",
+    turns.length > 0 && turns.every((turn) => turn.body?.model === "claude-sonnet"),
+    turns.map((turn) => turn.body?.model),
+  )
+  check(
     "the title went to the small model",
-    chats.some((request) => request.body?.model === "deepseek" && request.body.tools.length === 0),
+    chats.some((request) => request.body?.model === "claude-haiku" && request.body.tools.length === 0),
     chats.map((request) => request.body?.model),
   )
   const spent = steps.reduce((sum, step) => sum + (step.part?.cost ?? 0), 0)
@@ -242,6 +282,20 @@ try {
     "a refusal for credits says where to top up",
     (refused.stdout + refused.stderr).includes("https://hamzad.ai/panel/billing"),
     (refused.stdout + refused.stderr).slice(-500),
+  )
+
+  const before = gateway.requests.length
+  const capped = await run(["run", "--standalone", "--auto", "--format", "json", "[[refuse:daily_spend_limit]] hello"])
+  check(
+    "the day's limit is final: said once, in the gateway's words, and not tried again",
+    capped.code !== 0 &&
+      (capped.stdout + capped.stderr).includes("Today's usage limit of 800 credits is reached") &&
+      gateway.requests.slice(before).filter((request) => request.body?.tools.length).length === 1,
+    {
+      code: capped.code,
+      requests: gateway.requests.slice(before).map((request) => request.path),
+      output: (capped.stdout + capped.stderr).slice(-400),
+    },
   )
 
   const withKey = await run(["run", "--standalone", "--auto", "--format", "json", "hello"], {

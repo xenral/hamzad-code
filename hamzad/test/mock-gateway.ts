@@ -12,7 +12,33 @@
 
 export const key = `sk-hmz-${"t".repeat(43)}`
 
+const price = (input: number, output: number, read: number, write: number | null) => ({
+  unit: "credits_per_million_tokens",
+  input,
+  output,
+  cache_read: read,
+  cache_write: write,
+})
+
+// What the real gateway lists, plus one model that needs a plan, which only a signed-in account sees.
 export const models = [
+  {
+    id: "claude-haiku",
+    object: "model",
+    owned_by: "Anthropic",
+    name: "Claude Haiku 5.5",
+    family: "claude-haiku",
+    released: "2026-09-01",
+    context_window: 200000,
+    max_output_tokens: 16000,
+    capabilities: { tools: true, images: true, reasoning: true },
+    reasoning_efforts: ["low", "medium", "high"],
+    cache_format: "anthropic",
+    pricing: price(63.5746, 317.873, 6.3575, 79.4682),
+    default: false,
+    small: true,
+    plan: false,
+  },
   {
     id: "claude-sonnet",
     object: "model",
@@ -24,50 +50,92 @@ export const models = [
     max_output_tokens: 32000,
     capabilities: { tools: true, images: true, reasoning: true },
     reasoning_efforts: ["low", "medium", "high"],
-    pricing: {
-      unit: "credits_per_million_tokens",
-      input: 1935.5,
-      output: 9677.4,
-      cache_read: 193.5,
-      cache_write: 2419.4,
-    },
+    cache_format: "anthropic",
+    pricing: price(1271.4919, 6357.4594, 127.1492, 1589.3648),
     default: true,
     small: false,
+    plan: false,
   },
   {
     id: "deepseek",
     object: "model",
     owned_by: "DeepSeek",
-    name: "DeepSeek Flash",
-    family: null,
-    released: "2026-08-13",
+    name: "DeepSeek V4.1 Flash",
+    family: "deepseek",
+    released: "2026-09-01",
     context_window: 128000,
-    max_output_tokens: 8000,
+    max_output_tokens: 16000,
     capabilities: { tools: true, images: false, reasoning: false },
-    pricing: { unit: "credits_per_million_tokens", input: 180, output: 720, cache_read: 18, cache_write: null },
+    reasoning_efforts: null,
+    cache_format: null,
+    pricing: price(190.7238, 762.8951, 19.0724, null),
     default: false,
-    small: true,
+    small: false,
+    plan: false,
+  },
+  {
+    id: "claude-opus",
+    object: "model",
+    owned_by: "Anthropic",
+    name: "Claude Opus 5.5",
+    family: "claude-opus",
+    released: "2026-09-01",
+    context_window: 200000,
+    max_output_tokens: 32000,
+    capabilities: { tools: true, images: true, reasoning: true },
+    reasoning_efforts: ["low", "medium", "high"],
+    cache_format: "anthropic",
+    pricing: price(6357.4594, 31787.297, 635.7459, 7946.8243),
+    default: false,
+    small: false,
+    plan: true,
   },
 ]
 
+// The gateway's own codes, statuses and wording. The numbers beside a code sit flat under `error`.
 const refusals: Record<string, { status: number; type: string; message: string; extra?: Record<string, unknown> }> = {
-  invalid_api_key: { status: 401, type: "authentication_error", message: "The API key is not valid." },
+  invalid_api_key: {
+    status: 401,
+    type: "authentication_error",
+    message: "Missing or invalid API key. Sign in again, or make a key in the Hamzad panel.",
+  },
   insufficient_quota: {
     status: 402,
     type: "insufficient_quota",
-    message: "Not enough credits for this request.",
+    message: "Not enough credits: this request needs 310 spendable, 12 are. Top up at https://hamzad.ai/panel/billing",
     extra: { needed: 310, available: 12 },
   },
-  key_spend_cap: { status: 402, type: "insufficient_quota", message: "This key has reached its spend cap." },
-  access_denied: { status: 403, type: "permission_error", message: "This account cannot use the gateway yet." },
-  model_not_found: { status: 404, type: "invalid_request_error", message: "No such model." },
+  key_spend_cap: {
+    status: 402,
+    type: "insufficient_quota",
+    message: "This key has reached its own spending cap of 500 credits.",
+    extra: { limit: 500 },
+  },
+  // A 402, not a 429: a client waits and retries a rate limit, and this one would have it trying until midnight.
+  daily_spend_limit: {
+    status: 402,
+    type: "insufficient_quota",
+    message: "Today's usage limit of 800 credits is reached. It starts over at midnight, Tehran time.",
+    extra: { limit: 800 },
+  },
+  access_denied: {
+    status: 403,
+    type: "permission_error",
+    message: "This account does not have access to the API yet.",
+  },
+  model_not_found: {
+    status: 404,
+    type: "invalid_request_error",
+    message: "This model does not exist or is not offered. See /models for the list.",
+  },
   context_length_exceeded: {
     status: 400,
     type: "invalid_request_error",
-    message: "The conversation is longer than the model reads.",
+    message: "This request is longer than the model's context window. Shorten the conversation.",
   },
-  rate_limit_exceeded: { status: 429, type: "rate_limit_error", message: "Too many requests." },
+  rate_limit_exceeded: { status: 429, type: "rate_limit_error", message: "Too many requests. Try again shortly." },
   upstream_unavailable: { status: 503, type: "server_error", message: "The model is not reachable right now." },
+  not_found: { status: 404, type: "invalid_request_error", message: "Not found." },
 }
 
 export interface Recorded {
@@ -105,15 +173,23 @@ const text = (message: Message | undefined) =>
     ? message.content
     : (message?.content ?? []).map((part) => part.text ?? "").join("")
 
-export function start(options: { port?: number; approveAfter?: number; credits?: number } = {}) {
+export function start(
+  options: {
+    port?: number
+    approveAfter?: number
+    credits?: number
+    /** Whom the gateway serves: until it is `everyone` the model list asks for a key; `off` is a 404. */
+    stage?: "everyone" | "staff" | "off"
+  } = {},
+) {
   const requests: Recorded[] = []
+  const stage = options.stage ?? "everyone"
   const state = { polls: 0, credits: options.credits ?? 5000, spent: 0 }
   const error = (code: string) => {
     const refusal = refusals[code] ?? { status: 400, type: "invalid_request_error", message: code }
     return Response.json(
       {
         error: { message: refusal.message, message_fa: null, type: refusal.type, code, param: null, ...refusal.extra },
-        request_id: crypto.randomUUID(),
       },
       { status: refusal.status, headers: refusal.status === 429 ? { "retry-after": "1" } : {} },
     )
@@ -162,6 +238,7 @@ export function start(options: { port?: number; approveAfter?: number; credits?:
           expires_in: 180 * 86400,
           key_id: "mock-key",
           base_url: `${url.origin}/api/v1/llm`,
+          account: "+98912•••0001",
         })
       }
       if (path === "/panel/device")
@@ -170,19 +247,28 @@ export function start(options: { port?: number; approveAfter?: number; credits?:
         })
 
       if (!path.startsWith("/llm/")) return new Response("Not found", { status: 404 })
-      if (authorization !== `Bearer ${key}`) {
+      const signedIn = authorization === `Bearer ${key}`
+      if (path === "/llm/models") {
+        record()
+        if (stage === "off") return error("not_found")
+        // Open to anyone once the gateway serves everyone. A signed-out list holds what needs no plan.
+        if (!signedIn && (stage !== "everyone" || authorization)) return error("invalid_api_key")
+        return Response.json({
+          object: "list",
+          data: models.filter((model) => signedIn || !model.plan).map(({ plan: _, ...model }) => model),
+        })
+      }
+      if (!signedIn && path !== "/llm/chat/completions") {
         record()
         return error("invalid_api_key")
       }
-      if (path === "/llm/models") {
-        record()
-        return Response.json({ object: "list", data: models })
-      }
       if (path === "/llm/usage/summary") {
         record()
+        // `available` is what the person can still spend; it does not drop by what is on hold.
+        const credits = Math.floor(state.credits - state.spent)
         return Response.json({
-          balance: { available: Math.floor(state.credits - state.spent), reserved: 0 },
-          spent: state.spent,
+          balance: { credits, reserved: 0, available: credits },
+          pendingCredits: 0,
         })
       }
       if (path !== "/llm/chat/completions" || request.method !== "POST")
@@ -201,6 +287,7 @@ export function start(options: { port?: number; approveAfter?: number; credits?:
           .split("\n")[0]
           .slice(0, 200),
       })
+      if (!signedIn) return error("invalid_api_key")
       const last = messages.at(-1)
       const asked = text(messages.findLast((message) => message.role === "user"))
       const refuse = /\[\[refuse:([a-z_]+)\]\]/.exec(asked)
