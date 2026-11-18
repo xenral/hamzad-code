@@ -52,6 +52,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           if git merge --no-ff --no-edit "$BASE"; then
             echo "Merges cleanly." >> "$GITHUB_STEP_SUMMARY"
+            strays=$(ls .github/workflows | grep -v '^hamzad-' || true)
+            if [ -n "$strays" ]; then
+              echo "New upstream workflows to move to .github/upstream-workflows: $(echo $strays)" >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning::New upstream workflows to park: $(echo $strays)"
+            fi
           else
             {
               echo "Conflicts:"

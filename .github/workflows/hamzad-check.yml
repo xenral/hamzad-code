@@ -27,6 +27,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      # Upstream's workflows deploy and publish for upstream's repository. They are parked in
+      # .github/upstream-workflows; one that a merge brought back must be moved there too.
+      - name: Only Hamzad's workflows may run here
+        run: |
+          strays=$(ls .github/workflows | grep -v '^hamzad-' || true)
+          if [ -n "$strays" ]; then
+            echo "::error::Move to .github/upstream-workflows: $(echo $strays)"
+            exit 1
+          fi
       - name: Set up Bun
         uses: ./.github/actions/setup-bun
       - name: ripgrep, which the search tests run
