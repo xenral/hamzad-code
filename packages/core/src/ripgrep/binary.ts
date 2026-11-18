@@ -8,6 +8,7 @@ import { CrossSpawnSpawner } from "@opencode/util/cross-spawn-spawner"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { httpClient } from "@opencode/util/effect/app-node-platform"
 import { FSUtil } from "@opencode/util/fs-util"
+import { Brand } from "@opencode/util/brand"
 import { Global } from "@opencode/util/global"
 import { which } from "../util/which.js"
 
@@ -129,7 +130,7 @@ export namespace RipgrepBinary {
             if (!config) throw new Error(`unsupported platform for ripgrep: ${platformKey}`)
 
             const filename = `ripgrep-${VERSION}-${config.platform}.${config.extension}`
-            const url = `https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${filename}`
+            const url = `${Brand.ripgrep}/${VERSION}/${filename}`
             const archive = path.join(global.bin, filename)
 
             yield* Effect.logInfo("downloading ripgrep", { url })
