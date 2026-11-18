@@ -25,14 +25,15 @@ as OpenCode reads them. Hamzad's own files live apart from a stock OpenCode inst
 
 Everything that tells this build apart is in a few places, so that upstream can be merged often:
 
-| Where                                        | What                                                                                                               |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `packages/util/src/brand.ts`, `brand-env.ts` | Names, directories, ports, addresses, how money is written; `HAMZAD_*` variables read as `OPENCODE_*`              |
-| `packages/core/src/hamzad/`                  | Hamzad as a provider: sign-in, the model list (shown before sign-in too), the balance, what a refused sign-in says |
-| `packages/tui/src/hamzad/`                   | The credits left, in the sidebar and under the prompt; the sign-in dialog when a prompt is sent before signing in  |
-| `packages/cli/src/hamzad/`                   | `auth login` and `auth logout` meaning Hamzad when nothing is named; `auth list` marking the sign-in in use        |
-| `hamzad/`                                    | The installer, the packing script, the stand-in gateway and the end-to-end check                                   |
-| `.github/workflows/hamzad-*.yml`             | The release                                                                                                        |
+| Where                                        | What                                                                                                                                                                          |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/util/src/brand.ts`, `brand-env.ts` | Names, directories, ports, addresses, how money is written; `HAMZAD_*` variables read as `OPENCODE_*`                                                                         |
+| `packages/util/src/hamzad-status.ts`         | The states Hamzad's API can be in (not open yet, sign-in wanted, no access, out of reach) and the sentence for each, shared by the server, the command line and the interface |
+| `packages/core/src/hamzad/`                  | Hamzad as a provider: sign-in, the model list (shown before sign-in too), the balance, what a refused sign-in says                                                            |
+| `packages/tui/src/hamzad/`                   | The credits left, in the sidebar and under the prompt; the sign-in dialog when a prompt is sent before signing in                                                             |
+| `packages/cli/src/hamzad/`                   | `auth login` and `auth logout` meaning Hamzad when nothing is named; `auth list` marking the sign-in in use                                                                   |
+| `hamzad/`                                    | The installer, the packing script, the stand-in gateway and the end-to-end check                                                                                              |
+| `.github/workflows/hamzad-*.yml`             | The release                                                                                                                                                                   |
 
 Upstream's own files are edited only to read a value from the brand module or to call into one of the
 folders above. `git diff <upstream commit> -- . ':!hamzad' ':!packages/*/src/hamzad' ':!packages/*/test/hamzad'`
