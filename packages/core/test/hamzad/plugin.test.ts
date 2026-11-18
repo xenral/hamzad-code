@@ -10,6 +10,7 @@ import { Plugin } from "@opencode/core/plugin"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { Provider } from "@opencode/core/provider"
+import { Rpc } from "@opencode/core/rpc"
 import { Session } from "@opencode/core/session"
 import { Brand } from "@opencode/util/brand"
 import { withEnv } from "../fixture/env"
@@ -57,7 +58,7 @@ const flash = {
 // A stand-in for Hamzad's API. `approveAfter` is how many times the device poll answers "pending" first.
 function gateway(input: { models?: unknown[]; approveAfter?: number; deny?: boolean } = {}) {
   const requests: { path: string; authorization: string | null; body?: unknown }[] = []
-  const state = { polls: 0, models: input.models ?? [sonnet, flash], down: false }
+  const state = { polls: 0, models: input.models ?? [sonnet, flash], down: false, balance: 500 }
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
@@ -87,6 +88,10 @@ function gateway(input: { models?: unknown[]; approveAfter?: number; deny?: bool
           key_id: "key_1",
           base_url: `${url.origin}/api/v1/llm`,
         })
+      }
+      if (path === "/api/v1/llm/usage/summary") {
+        state.balance -= 3
+        return Response.json({ balance: { available: state.balance, reserved: 0 } })
       }
       if (path === "/api/v1/llm/models") {
         if (request.headers.get("authorization") !== `Bearer ${key}`)
@@ -262,6 +267,25 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
           expect(yield* resolve("primary")).toBe(Model.ID.make("claude-sonnet"))
         }),
       ),
+    ),
+  )
+
+  it.live("answers the interface with the credits left, and nothing while signed out", () =>
+    served({}, () =>
+      Effect.gen(function* () {
+        yield* addPlugin()
+        const rpc = yield* Rpc.Service
+        const balance = (fresh?: boolean) => rpc.call("hamzad.balance", "get", fresh === undefined ? {} : { fresh })
+        expect(yield* balance()).toBeNull()
+        yield* withEnv({ HAMZAD_API_KEY: key }, () =>
+          Effect.gen(function* () {
+            expect(yield* balance()).toEqual({ available: 497 })
+            // The server remembers the answer for a moment; a finished request asks past that.
+            expect(yield* balance()).toEqual({ available: 497 })
+            expect(yield* balance(true)).toEqual({ available: 494 })
+          }),
+        )
+      }),
     ),
   )
 

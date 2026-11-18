@@ -18,6 +18,7 @@ import type { PluginInternal } from "../plugin/internal.js"
 import { activeCredential } from "../plugin/provider/credential-settings.js"
 import { ProviderRefresh } from "../plugin/provider/refresh.js"
 import { SharedCache } from "../shared-cache.js"
+import { HamzadBalance } from "./balance.js"
 import { HamzadGateway } from "./gateway.js"
 import { HamzadModels } from "./models.js"
 
@@ -117,6 +118,27 @@ export const Plugin = define({
     )
 
     yield* ctx.session.hook("http.response", explain, { providerID: HamzadModels.providerID })
+
+    yield* ctx.rpc
+      .register(HamzadBalance.Definition, {
+        get: (input) =>
+          Effect.gen(function* () {
+            const key = secret((yield* activeCredential(ctx, integrationID)).credential)
+            if (!key) return null
+            return yield* cache
+              .get({
+                key: `hamzad:balance:${api}:${SharedCache.fingerprint(key)}`,
+                interval: "30 seconds",
+                force: input.fresh,
+                load: HamzadGateway.balance(http, api, key),
+              })
+              .pipe(
+                Effect.map((available) => ({ available })),
+                Effect.orElseSucceed(() => null),
+              )
+          }),
+      })
+      .pipe(Effect.orDie)
   }),
 } satisfies PluginInternal.InternalPlugin)
 
