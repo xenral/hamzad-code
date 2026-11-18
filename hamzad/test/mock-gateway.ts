@@ -184,9 +184,21 @@ export function start(
     stage?: "everyone" | "staff" | "off"
   } = {},
 ) {
+  // `state` may be changed while the gateway runs, as a setting would be: `stage`, `denied` (it
+  // is on, but not for the signed-in account) and `attempts` (too many sign-ins were started).
   const requests: Recorded[] = []
-  const stage = options.stage ?? "everyone"
-  const state = { polls: 0, credits: options.credits ?? 5000, spent: 0 }
+  const state = {
+    polls: 0,
+    credits: options.credits ?? 5000,
+    spent: 0,
+    stage: options.stage ?? ("everyone" as "everyone" | "staff" | "off"),
+    denied: false,
+    attempts: false,
+  }
+  // The sign-in routes refuse in the API's own shape, with a Persian message written for the panel.
+  const turnedAway = (status: number, code: string, message: string) =>
+    Response.json({ code, message, requestId: crypto.randomUUID() }, { status })
+  const unavailable = () => turnedAway(404, "auth.device_unavailable", "این امکان در دسترس نیست.")
   const error = (code: string) => {
     const refusal = refusals[code] ?? { status: 400, type: "invalid_request_error", message: code }
     return Response.json(
@@ -216,6 +228,9 @@ export function start(
 
       if (path === "/auth/device/code") {
         record()
+        if (state.stage === "off") return unavailable()
+        if (state.attempts)
+          return turnedAway(429, "auth.device_attempts", "تلاش‌های زیادی شد. کمی بعد دوباره امتحان کن.")
         state.polls = 0
         return Response.json({
           device_code: "mock-device-code",
@@ -228,6 +243,7 @@ export function start(
       }
       if (path === "/auth/device/token") {
         record()
+        if (state.stage === "off") return unavailable()
         state.polls++
         if (state.polls <= (options.approveAfter ?? 1))
           return Response.json(
@@ -252,17 +268,18 @@ export function start(
       const signedIn = authorization === `Bearer ${key}` || authorization === `Bearer ${panelKey}`
       if (path === "/llm/models") {
         record()
-        if (stage === "off") return error("not_found")
+        if (state.stage === "off") return error("not_found")
         // Open to anyone once the gateway serves everyone. A signed-out list holds what needs no plan.
-        if (!signedIn && (stage !== "everyone" || authorization)) return error("invalid_api_key")
+        if (!signedIn && (state.stage !== "everyone" || authorization)) return error("invalid_api_key")
+        if (signedIn && state.denied) return error("access_denied")
         return Response.json({
           object: "list",
           data: models.filter((model) => signedIn || !model.plan).map(({ plan: _, ...model }) => model),
         })
       }
-      if (!signedIn && path !== "/llm/chat/completions") {
+      if (path !== "/llm/chat/completions" && (state.stage === "off" || !signedIn || state.denied)) {
         record()
-        return error("invalid_api_key")
+        return error(state.stage === "off" ? "not_found" : signedIn ? "access_denied" : "invalid_api_key")
       }
       if (path === "/llm/usage/summary") {
         record()
@@ -289,7 +306,10 @@ export function start(
           .split("\n")[0]
           .slice(0, 200),
       })
+      // Switched off, the gateway is not there for anyone, whatever key is sent.
+      if (state.stage === "off") return error("not_found")
       if (!signedIn) return error("invalid_api_key")
+      if (state.denied) return error("access_denied")
       const last = messages.at(-1)
       const asked = text(messages.findLast((message) => message.role === "user"))
       const refuse = /\[\[refuse:([a-z_]+)\]\]/.exec(asked)

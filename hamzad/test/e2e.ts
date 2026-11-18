@@ -355,6 +355,82 @@ try {
     { code: withKey.code, stderr: withKey.stderr.slice(-400) },
   )
 
+  // The states production starts in: open to some accounts only, switched off, open to staff only.
+  // `second` is the machine above, which has a key and a saved model list; `fresh` has neither.
+  const second = {
+    XDG_DATA_HOME: path.join(home, "data-2"),
+    XDG_STATE_HOME: path.join(home, "state-2"),
+    HAMZAD_API_KEY: key,
+  }
+  const fresh = (name: string) => ({
+    XDG_DATA_HOME: path.join(home, `data-${name}`),
+    XDG_STATE_HOME: path.join(home, `state-${name}`),
+  })
+  const hello = ["run", "--standalone", "--auto", "--format", "json", "hello"]
+  const prompts = (since: number) =>
+    gateway.requests.slice(since).filter((request) => request.body?.tools.length).length
+  const output = (result: { stdout: string; stderr: string }) => result.stdout + result.stderr
+  const raw = /status ?code|non 2xx|https?:\/\/127\.0\.0\.1/i
+
+  gateway.state.denied = true
+  const beforeDenied = gateway.requests.length
+  const denied = await run(hello, second)
+  check(
+    "an account the gateway is not open to yet is told so, once",
+    denied.code !== 0 &&
+      output(denied).includes("This account does not have access to the API yet.") &&
+      prompts(beforeDenied) === 1,
+    { code: denied.code, prompts: prompts(beforeDenied), output: output(denied).slice(-300) },
+  )
+  gateway.state.denied = false
+
+  gateway.state.stage = "off"
+  const beforeOff = gateway.requests.length
+  const off = await run(hello, second)
+  check(
+    "with the gateway switched off, a prompt says it is not available yet, once",
+    off.code !== 0 &&
+      output(off).includes("Hamzad's API for tools is not available yet.") &&
+      !output(off).includes("Not found.") &&
+      prompts(beforeOff) === 1,
+    { code: off.code, prompts: prompts(beforeOff), output: output(off).slice(-300) },
+  )
+  const offModels = await run(["models", "--standalone"], fresh("off"))
+  check(
+    "switched off, an empty model list says why",
+    !offModels.stdout.includes("hamzad/") && offModels.stderr.includes("Hamzad's API for tools is not available yet."),
+    { stdout: offModels.stdout.slice(-200), stderr: offModels.stderr.slice(-300) },
+  )
+  const offLogin = await run(["auth", "login", "--standalone"], fresh("off"))
+  check(
+    "switched off, a sign-in says the same in words, not a status line",
+    offLogin.code !== 0 &&
+      output(offLogin).includes("Hamzad's API for tools is not available yet.") &&
+      !raw.test(output(offLogin)),
+    { code: offLogin.code, output: output(offLogin).slice(-300) },
+  )
+
+  gateway.state.stage = "staff"
+  const staffModels = await run(["models", "--standalone"], fresh("staff"))
+  check(
+    "open to staff only, a signed-out model list says to sign in",
+    !staffModels.stdout.includes("hamzad/") &&
+      staffModels.stderr.includes("Sign in to see Hamzad's models: run `hamzad auth login`."),
+    { stdout: staffModels.stdout.slice(-200), stderr: staffModels.stderr.slice(-300) },
+  )
+  gateway.state.stage = "everyone"
+
+  gateway.state.attempts = true
+  const tooMany = await run(["auth", "login", "--standalone"], fresh("attempts"))
+  check(
+    "too many sign-ins started is said in words",
+    tooMany.code !== 0 &&
+      output(tooMany).includes("Too many sign-in attempts. Try again in a little while.") &&
+      !raw.test(output(tooMany)),
+    { code: tooMany.code, output: output(tooMany).slice(-300) },
+  )
+  gateway.state.attempts = false
+
   check("files went to Hamzad's own directories", await exists(path.join(home, "data", "hamzad")))
   check(
     "nothing was written under an opencode directory",
