@@ -283,6 +283,48 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
     ),
   )
 
+  it.live("uses the key from the environment ahead of a stored sign-in", () =>
+    served({}, (started) =>
+      Effect.gen(function* () {
+        // A sign-in the gateway no longer accepts, such as a device revoked in the panel.
+        const credentials = yield* Credential.Service
+        yield* credentials.create({
+          integrationID: HamzadPlugin.integrationID,
+          label: "+98912•••0001",
+          value: Credential.OAuth.make({
+            type: "oauth",
+            methodID: Integration.MethodID.make("device"),
+            access: `sk-hmz-${"r".repeat(43)}`,
+            refresh: "",
+            expires: 0,
+          }),
+        })
+        yield* withEnv({ HAMZAD_API_KEY: key }, () =>
+          Effect.gen(function* () {
+            yield* addPlugin()
+            const integrations = yield* Integration.Service
+            expect(yield* integrations.connection.active(HamzadPlugin.integrationID)).toEqual({
+              type: "env",
+              name: "HAMZAD_API_KEY",
+            })
+            expect((yield* integrations.get(HamzadPlugin.integrationID))?.connections).toMatchObject([
+              { type: "env", name: "HAMZAD_API_KEY" },
+              { type: "credential", label: "+98912•••0001" },
+            ])
+            // The list is asked for with the environment's key, so it is the account's full list.
+            expect(yield* offered).toEqual(["claude-opus", "claude-sonnet", "deepseek"])
+            expect(started.requests.filter((request) => request.path.endsWith("/llm/models"))).toEqual([
+              { path: "/api/v1/llm/models", authorization: `Bearer ${key}`, body: undefined },
+            ])
+          }),
+        )
+        // Without the variable, the stored sign-in is the one in use again.
+        const integrations = yield* Integration.Service
+        expect(yield* integrations.connection.active(HamzadPlugin.integrationID)).toMatchObject({ type: "credential" })
+      }),
+    ),
+  )
+
   it.live("sends titles to the model the gateway marks as small", () =>
     served({}, () =>
       Effect.gen(function* () {

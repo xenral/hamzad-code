@@ -26,6 +26,7 @@ import { IntegrationConnection } from "./integration/connection.js"
 import { AppProcess } from "@opencode/util/process"
 import { ChildProcess } from "effect/process"
 import { Form } from "./form.js"
+import { HamzadEnvironment } from "./hamzad/environment.js"
 
 export const ID = Integration.ID
 export type ID = Integration.ID
@@ -397,7 +398,7 @@ const layer = Layer.effect(
         .filter((method) => method.type === "env")
         .flatMap((method) => method.names.filter((name) => process.env[name]))
         .map((name) => ({ type: "env" as const, name }))
-      return [...credentials, ...env]
+      return HamzadEnvironment.first(entry?.ref.id) ? [...env, ...credentials] : [...credentials, ...env]
     }
 
     const project = (entry: Entry, connections: IntegrationConnection.Info[]): Info =>
