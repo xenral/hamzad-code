@@ -56,6 +56,40 @@ describe("brand", () => {
   })
 })
 
+describe("brand downloads", () => {
+  const read = `const { Brand } = await import(${JSON.stringify(brand)}); console.log(JSON.stringify({ installer: Brand.update.installer, ripgrep: Brand.ripgrep, grammars: Brand.grammars ?? null, catalog: Brand.catalog(), support: Brand.support("2.3.2-hamzad.1").href }))`
+
+  test("the installer, ripgrep and the grammars come from hamzad.ai, and no catalog is loaded", () => {
+    expect(run(read)).toEqual({
+      installer: "https://hamzad.ai/cli/install",
+      ripgrep: "https://hamzad.ai/cli/mirror/rg",
+      grammars: "https://hamzad.ai/cli/mirror/ts",
+      catalog: false,
+      support: "https://hamzad.ai/panel/support?cli=2.3.2-hamzad.1",
+    })
+  })
+
+  test("HAMZAD_CLI_URL points a build at another copy of the downloads", () => {
+    expect(run(read, { HAMZAD_CLI_URL: "http://127.0.0.1:8765/" })).toMatchObject({
+      installer: "http://127.0.0.1:8765/install",
+      ripgrep: "http://127.0.0.1:8765/mirror/rg",
+    })
+  })
+
+  test("a catalog the person points at is loaded", () => {
+    expect(run(read, { OPENCODE_MODELS_URL: "https://models.example" }).catalog).toBe(true)
+  })
+
+  test("the upstream profile fetches from where upstream does", () => {
+    expect(run(read, { HAMZAD_BRAND: "upstream" })).toMatchObject({
+      installer: "https://opencode.ai/v2/install",
+      ripgrep: "https://github.com/BurntSushi/ripgrep/releases/download",
+      grammars: null,
+      catalog: true,
+    })
+  })
+})
+
 describe("brand environment", () => {
   const read = `await import(${JSON.stringify(env)}); console.log(JSON.stringify({ dir: process.env.OPENCODE_CONFIG_DIR ?? null, db: process.env.OPENCODE_DB ?? null, log: process.env.OPENCODE_LOG_LEVEL ?? null, key: process.env.OPENCODE_API_KEY ?? null }))`
 

@@ -34,6 +34,11 @@ interface Profile {
   }
   /** Where ripgrep's release archives are fetched from; the pinned checksums stay upstream's. */
   readonly ripgrep: string
+  /**
+   * A copy of github.com and raw.githubusercontent.com paths the interface fetches syntax grammars
+   * from, as `<mirror>/<host>/<path>`. Unset fetches them from where upstream does.
+   */
+  readonly grammars: string | undefined
   readonly money: {
     /** A spent amount. */
     readonly format: (value: number) => string
@@ -68,6 +73,7 @@ const upstream: Profile = {
       `https://opencode.ai/update/api/${encodeURIComponent(input.channel)}/${encodeURIComponent(input.artifact)}/${input.distribution}?current=${encodeURIComponent(input.current)}`,
   },
   ripgrep: "https://github.com/BurntSushi/ripgrep/releases/download",
+  grammars: undefined,
   money: {
     format: (value) => usd.format(value),
     fixed: (value) => `$${value.toFixed(2)}`,
@@ -91,6 +97,12 @@ const credits = (value: number) =>
 
 const site = "https://hamzad.ai"
 
+// Where the installer, the releases and the mirrors are served. HAMZAD_CLI_URL points a build at
+// another copy of them, such as freshly packed files on this machine.
+const downloads = (
+  typeof process !== "undefined" && process.env.HAMZAD_CLI_URL ? process.env.HAMZAD_CLI_URL : `${site}/cli`
+).replace(/\/+$/, "")
+
 const hamzad: Profile = {
   id: "hamzad",
   app: "hamzad",
@@ -106,12 +118,13 @@ const hamzad: Profile = {
   scope: "@hamzad",
   update: {
     package: /^@hamzad\/cli(?:-node)?$/,
-    installer: `${site}/cli/install`,
+    installer: `${downloads}/install`,
     // A static file per channel; the query is ignored by the host and kept for its logs.
     release: (input) =>
-      `${site}/cli/${encodeURIComponent(input.channel)}.json?current=${encodeURIComponent(input.current)}`,
+      `${downloads}/${encodeURIComponent(input.channel)}.json?current=${encodeURIComponent(input.current)}`,
   },
-  ripgrep: `${site}/cli/mirror/rg`,
+  ripgrep: `${downloads}/mirror/rg`,
+  grammars: `${downloads}/mirror/ts`,
   money: {
     format: credits,
     fixed: (value) => `${value.toFixed(2)} cr`,
@@ -143,6 +156,7 @@ export const docs = profile.docs
 export const scope = profile.scope
 export const update = profile.update
 export const ripgrep = profile.ripgrep
+export const grammars = profile.grammars
 export const money = profile.money
 export const logo = profile.logo
 

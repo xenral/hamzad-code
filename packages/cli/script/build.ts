@@ -16,6 +16,7 @@ import { verifyArtifact, verifySimulationGraph } from "./verify-artifact"
 import { resolveOpencodePty } from "./opencode-pty"
 import { NativeArch } from "../../../script/native-arch"
 import { bundledModelsSnapshot, modelsSnapshotPlugin } from "../../core/script/models-snapshot"
+import { mirrorPlugin } from "../../../hamzad/script/mirror-plugin"
 
 const dir = path.resolve(import.meta.dirname, "..")
 const binary = Brand.cli
@@ -183,6 +184,7 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
       wsReexportPlugin,
       simulationGraphPlugin,
       modelsSnapshot,
+      mirrorPlugin,
     ],
     external: ["node-gyp"],
     format: "esm",

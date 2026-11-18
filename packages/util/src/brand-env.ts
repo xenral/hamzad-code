@@ -7,7 +7,14 @@
 import { Brand } from "./brand.js"
 
 // Hamzad's own settings, which have no upstream counterpart to alias.
-const own = new Set(["HAMZAD_BRAND", "HAMZAD_API_URL", "HAMZAD_API_KEY", "HAMZAD_ENV", "HAMZAD_UPSTREAM_PROVIDERS"])
+const own = new Set([
+  "HAMZAD_BRAND",
+  "HAMZAD_API_URL",
+  "HAMZAD_API_KEY",
+  "HAMZAD_CLI_URL",
+  "HAMZAD_ENV",
+  "HAMZAD_UPSTREAM_PROVIDERS",
+])
 
 // A stock OpenCode setup may export these for its own files. Following them would put both tools
 // on one config directory or one database, so they count only when given under Hamzad's name.
