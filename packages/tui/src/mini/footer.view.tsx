@@ -8,6 +8,7 @@
 // All state comes from the parent RunFooter through SolidJS signals.
 // The view itself is stateless except for derived memos.
 /** @jsxImportSource @opentui/solid */
+import { Brand } from "@opencode/util/brand"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { RGBA, TextBuffer, TextBufferView } from "@opentui/core"
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
@@ -63,7 +64,7 @@ import type {
 } from "./types"
 import type { RunTheme } from "./theme"
 
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
+const money = Brand.money
 
 const EMPTY_BORDER = {
   topLeft: "",

@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/brand"
 import { ClientError, OpenCode, type SessionStatsInfo } from "@opencode/client"
 import { Service } from "@opencode/client/effect/service"
 import { TokenUsage } from "@opencode/schema/token-usage"
@@ -195,7 +196,7 @@ function renderCost(stats: SessionStatsInfo) {
   const cached = input === 0 ? 0 : (stats.tokens.cache.read / input) * 100
   return [
     "COST & TOKENS",
-    row("cost", `$${stats.cost.toFixed(2)}`),
+    row("cost", Brand.money.fixed(stats.cost)),
     row("input", formatNumber(stats.tokens.input)),
     row("output", formatNumber(stats.tokens.output)),
     row("reasoning", formatNumber(stats.tokens.reasoning)),
@@ -217,7 +218,7 @@ function renderModels(stats: SessionStatsInfo, limit: number, width: number) {
           `${item.model.providerID}/${item.model.id}${item.model.variant ? `#${item.model.variant}` : ""}`,
           width,
         ),
-        `  ${formatNumber(TokenUsage.total(item.tokens))} tokens · ${formatNumber(item.steps)} steps · $${item.cost.toFixed(2)}`,
+        `  ${formatNumber(TokenUsage.total(item.tokens))} tokens · ${formatNumber(item.steps)} steps · ${Brand.money.fixed(item.cost)}`,
       ]),
       ...(more > 0 ? ["", `+${more.toLocaleString("en-US")} more model${more === 1 ? "" : "s"}`] : []),
     ]
@@ -229,7 +230,7 @@ function renderModels(stats: SessionStatsInfo, limit: number, width: number) {
         `${item.model.providerID}/${item.model.id}${item.model.variant ? `#${item.model.variant}` : ""}`,
         formatNumber(TokenUsage.total(item.tokens)),
         formatNumber(item.steps),
-        `$${item.cost.toFixed(2)}`,
+        Brand.money.fixed(item.cost),
       ),
     ),
     ...(more > 0 ? ["", `+${more.toLocaleString("en-US")} more model${more === 1 ? "" : "s"}`] : []),

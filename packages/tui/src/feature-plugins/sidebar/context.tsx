@@ -1,11 +1,9 @@
 import { Plugin } from "@opencode/plugin/tui"
+import { Brand } from "@opencode/util/brand"
 import { createMemo, Show } from "solid-js"
 import { contextUsage } from "../../util/session"
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-})
+const money = Brand.money
 
 export function SidebarContext(props: { context: Plugin.Context; sessionID: string }) {
   const theme = props.context.theme

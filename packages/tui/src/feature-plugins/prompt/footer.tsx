@@ -1,4 +1,5 @@
 import { Plugin } from "@opencode/plugin/tui"
+import { Brand } from "@opencode/util/brand"
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
 import { contextUsage, formatContextUsage } from "../../util/session"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -7,10 +8,7 @@ import { useInteractivity } from "../../context/interactivity"
 import { stringWidth } from "../../util/string-width"
 import { createGoal, GoalStatus } from "./goal"
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-})
+const money = Brand.money
 
 export function PromptFooter(props: {
   context: Plugin.Context

@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/brand"
 import type { ModelInfo } from "@opencode/client"
 import { For, Show } from "solid-js"
 import { useTheme } from "../context/theme"
@@ -59,7 +60,7 @@ export function ModelDetail(props: {
     if (isFreeModel(props.model)) return "Free"
     const cost = props.model.cost[0]
     if (!cost) return ""
-    return `$${dollars(cost.input)}/$${dollars(cost.output)}`
+    return `${Brand.money.rate(dollars(cost.input))}/${Brand.money.rate(dollars(cost.output))}`
   }
   const facts = () =>
     [
