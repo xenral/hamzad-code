@@ -30,6 +30,7 @@ Everything that tells this build apart is in a few places, so that upstream can 
 | `packages/util/src/brand.ts`, `brand-env.ts` | Names, directories, ports, addresses, how money is written; `HAMZAD_*` variables read as `OPENCODE_*`              |
 | `packages/core/src/hamzad/`                  | Hamzad as a provider: sign-in, the model list (shown before sign-in too), the balance, what a refused sign-in says |
 | `packages/tui/src/hamzad/`                   | The credits left, in the sidebar and under the prompt; the sign-in dialog when a prompt is sent before signing in  |
+| `packages/cli/src/hamzad/`                   | `auth login` and `auth logout` meaning Hamzad when nothing is named; `auth list` marking the sign-in in use        |
 | `hamzad/`                                    | The installer, the packing script, the stand-in gateway and the end-to-end check                                   |
 | `.github/workflows/hamzad-*.yml`             | The release                                                                                                        |
 
@@ -50,13 +51,13 @@ bun hamzad/test/e2e.ts                         # sign in, prompt, tool call, cre
 Upstream's tests assert upstream's names, so they run with `HAMZAD_BRAND=upstream`; the tests under
 `packages/*/test/hamzad` run without it.
 
-| Variable                                  | Meaning                                                            |
-| ----------------------------------------- | ------------------------------------------------------------------ |
-| `HAMZAD_API_KEY`                          | A key from the panel, instead of signing in                        |
-| `HAMZAD_API_URL`                          | Another API address, e.g. a local core                             |
-| `HAMZAD_UPSTREAM_PROVIDERS=1`             | Bring back upstream's hosted providers and other vendors' sign-ins |
-| `HAMZAD_MODELS_URL`, `HAMZAD_MODELS_PATH` | A catalog of other providers' models to load                       |
-| `HAMZAD_<NAME>`                           | Any upstream `OPENCODE_<NAME>` setting                             |
+| Variable                                  | Meaning                                                                                        |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `HAMZAD_API_KEY`                          | A key from the panel, instead of signing in; used ahead of a stored sign-in whenever it is set |
+| `HAMZAD_API_URL`                          | Another API address, e.g. a local core                                                         |
+| `HAMZAD_UPSTREAM_PROVIDERS=1`             | Bring back upstream's hosted providers and other vendors' sign-ins                             |
+| `HAMZAD_MODELS_URL`, `HAMZAD_MODELS_PATH` | A catalog of other providers' models to load                                                   |
+| `HAMZAD_<NAME>`                           | Any upstream `OPENCODE_<NAME>` setting                                                         |
 
 ### Taking a new upstream version
 
