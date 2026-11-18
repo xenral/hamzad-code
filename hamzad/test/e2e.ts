@@ -401,11 +401,23 @@ try {
     !offModels.stdout.includes("hamzad/") && offModels.stderr.includes("Hamzad's API for tools is not available yet."),
     { stdout: offModels.stdout.slice(-200), stderr: offModels.stderr.slice(-300) },
   )
+  const beforeOffRun = gateway.requests.length
+  const offRun = await run(hello, fresh("off"))
+  check(
+    "switched off, a prompt on a new machine says why instead of naming a session with no model",
+    offRun.code !== 0 &&
+      output(offRun).includes("Hamzad's API for tools is not available yet.") &&
+      !output(offRun).includes("No model is available") &&
+      gateway.requests.slice(beforeOffRun).every((request) => request.path !== "/llm/chat/completions"),
+    { code: offRun.code, output: output(offRun).slice(-300) },
+  )
   const offLogin = await run(["auth", "login", "--standalone"], fresh("off"))
   check(
     "switched off, a sign-in says the same in words, not a status line",
     offLogin.code !== 0 &&
       output(offLogin).includes("Hamzad's API for tools is not available yet.") &&
+      output(offLogin).includes("Sign in to Hamzad") &&
+      output(offLogin).includes("Sign-in failed") &&
       !raw.test(output(offLogin)),
     { code: offLogin.code, output: output(offLogin).slice(-300) },
   )
@@ -417,6 +429,14 @@ try {
     !staffModels.stdout.includes("hamzad/") &&
       staffModels.stderr.includes("Sign in to see Hamzad's models: run `hamzad auth login`."),
     { stdout: staffModels.stdout.slice(-200), stderr: staffModels.stderr.slice(-300) },
+  )
+  const staffRun = await run(hello, fresh("staff"))
+  check(
+    "open to staff only, a signed-out prompt says how to sign in",
+    staffRun.code !== 0 &&
+      output(staffRun).includes("You are not signed in to Hamzad. Run `hamzad auth login`") &&
+      !output(staffRun).includes("No model is available"),
+    { code: staffRun.code, output: output(staffRun).slice(-300) },
   )
   gateway.state.stage = "everyone"
 
