@@ -44,6 +44,7 @@ import { errorMessage } from "../../util/error"
 import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
 import { DialogIntegration } from "../dialog-integration"
+import { HamzadSignIn } from "../../hamzad/sign-in"
 import { useConnected } from "../use-connected"
 import { useToast } from "../../ui/toast"
 import { createFadeIn } from "../../util/signal"
@@ -1160,7 +1161,7 @@ export function Prompt(props: PromptProps) {
     const agent = local.agent.current()
     if (!agent) return false
     const selection = local.model.selection()
-    if (!selection) {
+    if (!selection || HamzadSignIn.needed(selection.providerID, data.location.integration.list() ?? [])) {
       void promptModelWarning()
       return false
     }
