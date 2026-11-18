@@ -71,6 +71,17 @@ const environment = {
   // From source the CLI runs inside this repository, whose own project config asks for reference
   // repositories from GitHub. A built binary runs in the test's project and needs no such switch.
   ...(bin ? {} : { HAMZAD_DISABLE_PROJECT_CONFIG: "1" }),
+  // Windows finds the home and temp directories, and its own system files, through these.
+  ...(process.platform === "win32"
+    ? {
+        USERPROFILE: home,
+        TEMP: path.join(home, "tmp"),
+        TMP: path.join(home, "tmp"),
+        SystemRoot: process.env.SystemRoot,
+        ComSpec: process.env.ComSpec,
+        PATHEXT: process.env.PATHEXT,
+      }
+    : {}),
 }
 
 async function run(args: string[], env: Record<string, string> = {}) {

@@ -1,0 +1,80 @@
+name: hamzad-upstream
+
+# Once a week, tries to merge the newest upstream release that has stood for three days and says
+# whether it merges cleanly and still typechecks. It changes nothing: the merge itself is done by
+# hand (see .github/README.md), and this only tells us how much work the next one is.
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  try:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: pick
+        name: Pick the upstream release
+        run: |
+          git remote add upstream https://github.com/anomalyco/opencode.git
+          git fetch --quiet upstream dev 'refs/tags/v2.*:refs/tags/v2.*'
+          cutoff=$(( $(date +%s) - 3 * 86400 ))
+          tag=$(git for-each-ref --sort=-creatordate --format='%(refname:short) %(creatordate:unix)' 'refs/tags/v2.*' \
+            | awk -v cutoff="$cutoff" '$2 <= cutoff { print $1; exit }')
+          [ -n "$tag" ] || { echo "::error::no upstream release found"; exit 1; }
+          # A release tag is one commit off dev that only bumps versions; dev's own commit is its parent.
+          base=$(git rev-parse "$tag^")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$base" HEAD; then echo "merged=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.pick.outputs.merged == 'true'
+        run: echo "Already on ${{ steps.pick.outputs.tag }}." >> "$GITHUB_STEP_SUMMARY"
+      - id: merge
+        if: steps.pick.outputs.merged != 'true'
+        name: Try the merge
+        run: |
+          git config user.name "hamzad-upstream" && git config user.email "hamzad-upstream@users.noreply.github.com"
+          {
+            echo "## Merging $TAG"
+            echo
+            echo "$(git rev-list --count "HEAD..$BASE") upstream commits ahead."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          if git merge --no-ff --no-edit "$BASE"; then
+            echo "Merges cleanly." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "Conflicts:"
+              echo '```'
+              git diff --name-only --diff-filter=U
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+        env:
+          TAG: ${{ steps.pick.outputs.tag }}
+          BASE: ${{ steps.pick.outputs.base }}
+      - if: steps.pick.outputs.merged != 'true'
+        name: Set up Bun
+        uses: ./.github/actions/setup-bun
+      - if: steps.pick.outputs.merged != 'true'
+        name: Typecheck the merged tree
+        run: bun turbo typecheck:tsc --concurrency=3 --filter=@opencode/util --filter=@opencode/core --filter=@opencode/plugin --filter=@opencode/server --filter=@opencode/cli --filter=@opencode/tui
+      - if: steps.pick.outputs.merged != 'true'
+        name: Hamzad's tests and the end-to-end check on the merged tree
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+          (cd packages/util && bun test test/hamzad)
+          (cd packages/core && bun run test test/hamzad)
+          (cd packages/cli && bun test --timeout 30000 test/hamzad)
+          bun hamzad/test/e2e.ts --rg "$(command -v rg)"
