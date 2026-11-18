@@ -2,6 +2,7 @@ export * as App from "./app.js"
 
 import { Context, Layer } from "effect"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { Brand } from "@opencode/util/brand"
 
 export interface Info {
   readonly name: string
@@ -20,7 +21,7 @@ export function make(input: Partial<Info> = {}): Info {
 }
 
 export function useragent(app: Info) {
-  return `opencode/${app.channel}/${app.version}/${app.name}`
+  return `${Brand.agent}/${app.channel}/${app.version}/${app.name}`
 }
 
 export const layer = (input?: Partial<Info>) => Layer.succeed(Service, make(input))
