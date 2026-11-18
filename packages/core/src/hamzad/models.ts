@@ -9,9 +9,12 @@ export const providerID = Provider.ID.make("hamzad")
 
 /** The gateway's list as models of the Hamzad provider. Prices are credits per million tokens. */
 export function derive(remote: readonly HamzadGateway.Model[]) {
+  const newest = Math.max(0, ...remote.map((item) => date(item.released)))
   return remote.map((item) => {
     const id = Model.ID.make(item.id)
-    const released = item.released ? Date.parse(item.released) : 0
+    // Lists are ordered newest first, and the interface opens a new session with the first model:
+    // it asks the server for no default. So the gateway's default counts as the newest of them.
+    const released = item.default ? newest + 1 : date(item.released)
     const input = item.pricing?.input ?? 0
     return Model.Info.make({
       ...Model.Info.default(providerID, id),
@@ -24,7 +27,7 @@ export function derive(remote: readonly HamzadGateway.Model[]) {
         output: ["text"],
       },
       variants: item.capabilities?.reasoning === false ? [] : variants(item.reasoning_efforts ?? []),
-      time: { released: Number.isFinite(released) ? released : 0 },
+      time: { released },
       // The gateway reports each request's exact charge, so these only fill the model picker.
       // A cache price it leaves out is billed as plain input.
       cost: item.pricing
@@ -52,6 +55,11 @@ export const preferred = (remote: readonly HamzadGateway.Model[]) => remote.find
 
 /** The model the gateway marks for titles and other small requests, when it marks one. */
 export const small = (remote: readonly HamzadGateway.Model[]) => remote.find((item) => item.small)?.id
+
+function date(value: string | null | undefined) {
+  const time = value ? Date.parse(value) : 0
+  return Number.isFinite(time) ? time : 0
+}
 
 function variants(efforts: readonly string[]): Model.Info["variants"] {
   return Array.from(new Set(efforts), (effort) => ({

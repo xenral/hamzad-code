@@ -427,6 +427,14 @@ describe("HamzadModels", () => {
     expect(sparse?.compatibility).toBeUndefined()
   })
 
+  test("the gateway's default sorts as the newest, so a new session opens with it", () => {
+    const older = { ...sonnet, released: "2026-03-01" }
+    const [first, second, third] = HamzadModels.derive([{ ...flash, released: "2026-09-01" }, older, { id: "bare" }])
+    expect(first?.time.released).toBe(Date.parse("2026-09-01"))
+    expect(second?.time.released).toBe(Date.parse("2026-09-01") + 1)
+    expect(third?.time.released).toBe(0)
+  })
+
   test("a cache price the gateway leaves out is the input price, and no cache format means no markers", () => {
     const [model] = HamzadModels.derive([flash])
     expect<unknown>(model?.cost).toEqual([
