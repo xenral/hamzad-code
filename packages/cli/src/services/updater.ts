@@ -197,13 +197,13 @@ const make = Effect.gen(function* () {
   const npm = prefixNpm ?? "npm"
 
   const readPolicy = Effect.fnUntraced(function* () {
-    const values = yield* Effect.forEach(["config.json", "opencode.json", "opencode.jsonc"], (name) =>
+    const values = yield* Effect.forEach(["config.json", "opencode.json", "opencode.jsonc", ...Brand.config.names], (name) =>
       fs.readFileString(path.join(global.config, name)).pipe(
         Effect.map(decodePolicy),
         Effect.orElseSucceed(() => undefined),
       ),
     )
-    return values.findLast((value) => value !== undefined) ?? "notify"
+    return values.findLast((value) => value !== undefined) ?? Brand.update.policy
   })
 
   const exec = Effect.fnUntraced(function* (command: string[], timeout: Duration.Input = "30 seconds") {
@@ -550,7 +550,7 @@ const make = Effect.gen(function* () {
             runUpgrade({
               method,
               command: [bash, installer, "--version", version, "--no-modify-path"],
-              displayCommand: ["opencode", "upgrade", version, "--method", "curl"],
+              displayCommand: [Brand.cli, "upgrade", version, "--method", "curl"],
               title: "The OpenCode installer failed",
             }),
           )
