@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/brand"
 import { EOL } from "node:os"
 import path from "node:path"
 import { readFile, stat, writeFile } from "node:fs/promises"
@@ -39,6 +40,7 @@ export default Runtime.handler(
 
 export async function resolveConfigPath(directory: string) {
   const candidates = [
+    ...Brand.config.names.toReversed().map((name) => path.join(directory, name)),
     path.join(directory, "opencode.json"),
     path.join(directory, "opencode.jsonc"),
     path.join(directory, ".opencode", "opencode.json"),
