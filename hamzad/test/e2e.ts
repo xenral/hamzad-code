@@ -133,10 +133,101 @@ async function helps(command: string[] = []): Promise<{ command: string; code: n
 // The interface in a pseudo-terminal: what it has written so far with the escape sequences taken
 // out, the titles it gave the window, and a way to type into it.
 const escapes = /\x1b\[[0-9;?<>=]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>]/g
+/**
+ * The screen a terminal would show for what a program wrote: characters placed where the cursor
+ * puts them, so a line that arrives in pieces, or with unchanged cells skipped, reads as it looks.
+ * Only what a full-screen interface uses is followed: cursor moves, erasing, line breaks; colours
+ * and modes are passed over.
+ */
+function screenOf(raw: string, cols: number, rows: number) {
+  const grid = Array.from({ length: rows }, () => Array<string>(cols).fill(" "))
+  const cursor = { row: 0, col: 0 }
+  const saved = { row: 0, col: 0 }
+  const clamp = () => {
+    cursor.row = Math.max(0, Math.min(rows - 1, cursor.row))
+    cursor.col = Math.max(0, Math.min(cols - 1, cursor.col))
+  }
+  const erase = (row: number, from: number, to: number) => {
+    for (let col = from; col < to; col++) grid[row]![col] = " "
+  }
+  const sequence =
+    /\x1b\[([0-9;?<>=]*)([A-Za-z@`~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b([78=>DEM])/y
+  let index = 0
+  while (index < raw.length) {
+    if (raw[index] === "\x1b") {
+      sequence.lastIndex = index
+      const match = sequence.exec(raw)
+      if (!match) {
+        index += 1
+        continue
+      }
+      index = sequence.lastIndex
+      const [, params, final, single] = match
+      if (single === "7") Object.assign(saved, cursor)
+      if (single === "8") Object.assign(cursor, saved)
+      if (!final || params?.startsWith("?")) continue
+      const numbers = (params ?? "").split(";").map((value) => Number.parseInt(value, 10))
+      const first = Number.isNaN(numbers[0]!) ? 1 : numbers[0]!
+      const second = numbers[1] === undefined || Number.isNaN(numbers[1]) ? 1 : numbers[1]
+      if (final === "H" || final === "f") {
+        cursor.row = first - 1
+        cursor.col = second - 1
+      } else if (final === "A") cursor.row -= first
+      else if (final === "B" || final === "e") cursor.row += first
+      else if (final === "C" || final === "a") cursor.col += first
+      else if (final === "D") cursor.col -= first
+      else if (final === "G" || final === "`") cursor.col = first - 1
+      else if (final === "d") cursor.row = first - 1
+      else if (final === "E") {
+        cursor.row += first
+        cursor.col = 0
+      } else if (final === "F") {
+        cursor.row -= first
+        cursor.col = 0
+      } else if (final === "s") Object.assign(saved, cursor)
+      else if (final === "u") Object.assign(cursor, saved)
+      else if (final === "K") {
+        const mode = Number.isNaN(numbers[0]!) ? 0 : numbers[0]
+        if (mode === 0) erase(cursor.row, cursor.col, cols)
+        if (mode === 1) erase(cursor.row, 0, cursor.col + 1)
+        if (mode === 2) erase(cursor.row, 0, cols)
+      } else if (final === "J") {
+        const mode = Number.isNaN(numbers[0]!) ? 0 : numbers[0]
+        if (mode === 2 || mode === 3) grid.forEach((_, row) => erase(row, 0, cols))
+        if (mode === 0) {
+          erase(cursor.row, cursor.col, cols)
+          for (let row = cursor.row + 1; row < rows; row++) erase(row, 0, cols)
+        }
+      }
+      clamp()
+      continue
+    }
+    const character = String.fromCodePoint(raw.codePointAt(index)!)
+    index += character.length
+    if (character === "\r") cursor.col = 0
+    else if (character === "\n") cursor.row = Math.min(rows - 1, cursor.row + 1)
+    else if (character === "\b") cursor.col = Math.max(0, cursor.col - 1)
+    else if (character >= " " && character !== "\x7f") {
+      const width = Bun.stringWidth(character)
+      if (width === 0) {
+        const at = Math.max(0, cursor.col - 1)
+        grid[cursor.row]![at] += character
+      } else if (cursor.col < cols) {
+        grid[cursor.row]![cursor.col] = character
+        if (width === 2 && cursor.col + 1 < cols) grid[cursor.row]![cursor.col + 1] = ""
+        cursor.col = Math.min(cols, cursor.col + width)
+      }
+    }
+  }
+  return grid.map((cells) => cells.join("").replace(/\s+$/, ""))
+}
+
 async function interactive(
   env: Record<string, string>,
   drive: (screen: {
     text: () => string
+    /** The screen as it looks now, line by line. */
+    lines: () => string[]
     titles: () => string[]
     type: (keys: string) => void
     /** Has the whole screen drawn again, and gives where in `text()` that drawing begins. */
@@ -166,14 +257,18 @@ async function interactive(
   // arrives in pieces and cannot be read back from what was written. A change of width has the
   // interface draw every line whole again; what is written after it can be read as it looks.
   const size = { cols: 140 }
+  // The screen is worked out again from what was written since the last change of size.
+  const since = { at: 0 }
   try {
     await drive({
       text,
+      lines: () => screenOf(written.raw.slice(since.at), size.cols, 45),
       titles: () => [...written.raw.matchAll(/\x1b\][02];([^\x07\x1b]*)/g)].map((match) => match[1]),
       type: (keys) => child.terminal.write(keys),
       redraw: () => {
         const from = text().length
         size.cols = size.cols === 140 ? 141 : 140
+        since.at = written.raw.length
         child.terminal.resize(size.cols, 45)
         return from
       },
@@ -405,12 +500,13 @@ try {
       const shown = await screen.until(() => left(screen.text()) !== undefined)
       const before = await figure()
       // The home screen: the line under the wordmark, and the prompt in its frame, named by mode and model.
-      const drawn = screen.redraw()
+      screen.redraw()
       const own = ["your coding twin", "╭─ Code · Claude Sonnet", "❯ Tell Hamzad what to do", "ctrl+p menu ─╯"]
+      const home = () => screen.lines().join("\n")
       check(
         "the home screen shows the framed prompt, named by mode and model, and Hamzad's line",
-        await screen.until(() => own.every((word) => screen.text().slice(drawn).includes(word)), 15_000),
-        { missing: own.filter((word) => !screen.text().slice(drawn).includes(word)) },
+        await screen.until(() => own.every((word) => home().includes(word)), 15_000),
+        { missing: own.filter((word) => !home().includes(word)), screen: home().slice(-1500) },
       )
       check(
         "the interface shows the credits left to the hundredth",
@@ -437,7 +533,8 @@ try {
       )
 
       // The session: the conversation in its frame, each speaker marked, the tool step on one line.
-      const session = screen.redraw()
+      screen.redraw()
+      const conversation = () => screen.lines().join("\n")
       const framed = [
         "╭─ hamzad",
         "you › Say what the note holds.",
@@ -449,8 +546,8 @@ try {
       ]
       check(
         "the session shows the conversation in its frame, `you ›` and `hamzad ›`, and the tool step as one line",
-        await screen.until(() => framed.every((word) => screen.text().slice(session).includes(word)), 15_000),
-        { missing: framed.filter((word) => !screen.text().slice(session).includes(word)) },
+        await screen.until(() => framed.every((word) => conversation().includes(word)), 15_000),
+        { missing: framed.filter((word) => !conversation().includes(word)), screen: conversation().slice(-1500) },
       )
 
       const asked = gateway.requests.filter((request) => request.path === "/llm/usage/summary").length
