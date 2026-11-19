@@ -171,17 +171,29 @@ export function token(http: HttpClient.HttpClient, api: string, code: string, in
   return loop(interval)
 }
 
-const Summary = Schema.Struct({
-  balance: Schema.Struct({ available: Schema.Number, reserved: maybe(Schema.Number) }),
-})
+const Count = { requests: Schema.Number, credits: Schema.Number }
 
-/** Credits the account can still spend. */
-export const balance = Effect.fn("HamzadGateway.balance")(function* (
+const Summary = Schema.Struct({
+  balance: Schema.Struct({ available: Schema.Number }),
+  pendingCredits: maybe(Schema.Number),
+  days: maybe(Schema.Number),
+  total: maybe(Schema.Struct({ ...Count, promptTokens: Schema.Number, completionTokens: Schema.Number })),
+  byDay: maybe(Schema.Array(Schema.Struct({ day: Schema.String, ...Count }))),
+  byModel: maybe(
+    Schema.Array(
+      Schema.Struct({ modelId: Schema.String, ...Count, promptTokens: Schema.Number, completionTokens: Schema.Number }),
+    ),
+  ),
+})
+export type Summary = typeof Summary.Type
+
+/** What the account has left and what it used through the gateway over the last 30 days. */
+export const summary = Effect.fn("HamzadGateway.summary")(function* (
   http: HttpClient.HttpClient,
   api: string,
   key: string,
 ) {
-  const summary = yield* HttpClient.filterStatusOk(http)
+  return yield* HttpClient.filterStatusOk(http)
     .execute(
       HttpClientRequest.get(`${api}/llm/usage/summary?days=30`).pipe(
         HttpClientRequest.acceptJson,
@@ -189,8 +201,29 @@ export const balance = Effect.fn("HamzadGateway.balance")(function* (
       ),
     )
     .pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(Summary)), Effect.timeout("10 seconds"))
-  return summary.balance.available
 })
+
+/**
+ * What is left, to the hundredth. The gateway gives it rounded down to a whole credit, beside what
+ * was used and is not yet charged. A prompt on a small model costs a few hundredths, so the whole
+ * number would stand still for many prompts and read as broken. The fraction it dropped is the one
+ * that takes the pending amount up to its next whole credit.
+ */
+export function left(answer: Pick<Summary, "balance" | "pendingCredits">) {
+  const pending = answer.pendingCredits ?? 0
+  if (answer.balance.available <= 0) return 0
+  // Down to the hundredth, never up: the figure must not promise a hundredth that is not there.
+  return Math.floor((answer.balance.available + Math.ceil(pending) - pending) * 100 + 1e-6) / 100
+}
+
+/** The gateway counts a day as Tehran's. */
+export const today = (now: Date) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now)
 
 /** What the gateway says when it refuses a request, as far as the plugin reads it. */
 export const Refusal = Schema.Struct({

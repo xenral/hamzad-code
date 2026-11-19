@@ -34,6 +34,23 @@ describe("Hamzad's states in words", () => {
     ])
   })
 
+  test("a person asking for their usage is told why there is none to show", () => {
+    expect(
+      run(
+        `const { HamzadStatus } = await import(${JSON.stringify(status)}); console.log(JSON.stringify([["listed", false], ["sign-in", false], ["unavailable", false], ["unreachable", false], ["listed", true], ["no-access", true], ["unavailable", true], ["refused", true]].map(([state, signedIn]) => HamzadStatus.account(state, signedIn))))`,
+      ),
+    ).toEqual([
+      "You are not signed in to Hamzad. Run `hamzad auth login` and approve this device in your panel.",
+      "You are not signed in to Hamzad. Run `hamzad auth login` and approve this device in your panel.",
+      "Hamzad's API for tools is not available yet.",
+      "Could not reach Hamzad. Check your connection and try again.",
+      "Could not reach Hamzad. Check your connection and try again.",
+      "This account does not have access to Hamzad's API yet.",
+      "Hamzad's API for tools is not available yet.",
+      "Hamzad did not accept this sign-in. Run `hamzad auth login` to sign in again.",
+    ])
+  })
+
   test("a sign-in that cannot go on is worded by its code, with a plain sentence for any other", () => {
     expect(
       run(

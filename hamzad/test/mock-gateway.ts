@@ -191,6 +191,19 @@ const text = (message: Message | undefined) =>
 
 type Stage = "everyone" | "staff" | "off" | "absent"
 
+// The block of credits the gateway holds while a session is under way.
+const hold = 500
+// The name a key made by the device sign-in carries.
+const deviceKeyName = "Hamzad CLI · test-machine"
+// The gateway counts a day as Tehran's.
+const tehranDay = (now: Date) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now)
+
 export function start(
   options: {
     port?: number
@@ -210,6 +223,8 @@ export function start(
     polls: 0,
     credits: options.credits ?? 5000,
     spent: 0,
+    // What each model and each key was used for, as the usage summary counts it.
+    used: [] as { model: string; key: string; credits: number; prompt: number; cached: number; completion: number }[],
     stage: options.stage ?? ("everyone" as Stage),
     denied: false,
     attempts: false,
@@ -311,11 +326,42 @@ export function start(
       }
       if (path === "/llm/usage/summary") {
         record()
-        // `available` is what the person can still spend; it does not drop by what is on hold.
-        const credits = Math.floor(state.credits - state.spent)
+        // The real answer, field for field. Nothing here is settled into the credit history, so all
+        // that was used is pending: `available` is whole credits, less the pending amount rounded up.
+        const round = (credits: number) => Math.round(credits * 1e4) / 1e4
+        const count = (rows: typeof state.used) => ({
+          requests: rows.length,
+          credits: round(rows.reduce((sum, row) => sum + row.credits, 0)),
+        })
+        const tokens = (rows: typeof state.used) => ({
+          promptTokens: rows.reduce((sum, row) => sum + row.prompt, 0),
+          completionTokens: rows.reduce((sum, row) => sum + row.completion, 0),
+        })
+        const by = (pick: (row: (typeof state.used)[number]) => string) =>
+          [...Map.groupBy(state.used, pick)].toSorted((a, b) => count(b[1]).credits - count(a[1]).credits)
         return Response.json({
-          balance: { credits, reserved: 0, available: credits },
-          pendingCredits: 0,
+          balance: {
+            credits: state.credits,
+            reserved: state.used.length > 0 ? hold : 0,
+            available: Math.max(0, Math.floor(state.credits - state.spent)),
+          },
+          pendingCredits: round(state.spent),
+          days: Number(url.searchParams.get("days") ?? 30),
+          total: { ...count(state.used), ...tokens(state.used) },
+          byDay: state.used.length > 0 ? [{ day: tehranDay(new Date()), ...count(state.used) }] : [],
+          byModel: by((row) => row.model).map(([modelId, rows]) => ({
+            modelId,
+            ...count(rows),
+            promptTokens: tokens(rows).promptTokens,
+            cachedTokens: rows.reduce((sum, row) => sum + row.cached, 0),
+            completionTokens: tokens(rows).completionTokens,
+          })),
+          byKey: by((row) => row.key).map(([name, rows]) => ({
+            keyId:
+              name === deviceKeyName ? "0b6f3f0e-6c1d-4a39-9a55-1f0c2d7e8a01" : "0b6f3f0e-6c1d-4a39-9a55-1f0c2d7e8a02",
+            name,
+            ...count(rows),
+          })),
         })
       }
       if (path !== "/llm/chat/completions" || request.method !== "POST")
@@ -424,6 +470,14 @@ export function start(
             ]
           : [chunk([], { usage })]
       state.spent += credits
+      state.used.push({
+        model: model.id,
+        key: authorization === `Bearer ${panelKey}` ? "My laptop" : deviceKeyName,
+        credits,
+        prompt: promptTokens,
+        cached,
+        completion: completionTokens,
+      })
       const encoder = new TextEncoder()
       return new Response(
         new ReadableStream({

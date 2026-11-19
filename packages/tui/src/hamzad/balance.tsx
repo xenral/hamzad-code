@@ -7,10 +7,16 @@ import { createSignal, Show } from "solid-js"
 // Below this width the line under the prompt has no room beside the context and cost figures.
 const FOOTER_MIN_WIDTH = 100
 
+// How often the figure is asked for again while nothing else prompts it: credits also move when the
+// person tops up in the panel or works in another window.
+const EVERY = 60_000
+
 /**
  * The credits the account has left, beside what the session has spent: in the sidebar, and under
- * the prompt on a wide terminal. Asked again whenever a request finishes, since that is when the
- * balance moves. Hidden while signed out.
+ * the prompt on a wide terminal. To the hundredth, since a prompt on a small model costs less than
+ * a credit and a whole number would stand still. Asked again whenever a request finishes, since
+ * that is when the balance moves, once a minute besides, and whenever the server learns a new
+ * figure, as it does when `/usage` opens. Hidden while signed out.
  */
 export default Plugin.define({
   id: "hamzad.balance",
@@ -30,7 +36,13 @@ export default Plugin.define({
       )
     }
     load(false)
+    const timer = setInterval(() => load(false), EVERY)
     const stop = [
+      () => clearInterval(timer),
+      rpc.events.on("changed", (event) => {
+        turn.value++
+        setAvailable(event.data.available)
+      }),
       context.data.on("server.connected", () => load(false)),
       context.data.on("credential.switched", () => load(true)),
       context.data.on("session.execution.succeeded", () => load(true)),
@@ -46,7 +58,7 @@ export default Plugin.define({
             <text fg={context.theme.text.base}>
               <b>Credits</b>
             </text>
-            <text fg={context.theme.text.muted}>{Brand.money.format(available() ?? 0)} left</text>
+            <text fg={context.theme.text.muted}>{Brand.money.exact(available() ?? 0)} left</text>
           </box>
         </Show>
       ),
@@ -59,7 +71,7 @@ export default Plugin.define({
         return (
           <Show when={available() !== undefined && dimensions().width >= FOOTER_MIN_WIDTH}>
             <text fg={context.theme.text.muted} wrapMode="none" flexShrink={0}>
-              {Brand.money.format(available() ?? 0)} left
+              {Brand.money.exact(available() ?? 0)} left
             </text>
           </Show>
         )

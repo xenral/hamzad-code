@@ -150,26 +150,60 @@ export const Plugin = define({
 
     yield* ctx.session.hook("http.response", explain, { providerID: HamzadModels.providerID })
 
-    yield* ctx.rpc
+    // What is left and what was used, for the footer, the sidebar and `/usage`. One answer from the
+    // gateway serves them all for a moment; a finished request and an opened `/usage` ask past that.
+    const told = {
+      available: undefined as number | undefined,
+      say: (_available: number): Effect.Effect<void> => Effect.void,
+    }
+    const usage = Effect.fn("HamzadPlugin.usage")(function* (fresh: boolean | undefined) {
+      const key = secret((yield* activeCredential(ctx, integrationID)).credential)
+      if (!key) return undefined
+      const answer = yield* cache
+        .get({
+          key: `hamzad:usage:${api}:${SharedCache.fingerprint(key)}`,
+          interval: "30 seconds",
+          force: fresh,
+          load: HamzadGateway.summary(http, api, key),
+        })
+        .pipe(Effect.orElseSucceed(() => undefined))
+      if (!answer) return undefined
+      const available = HamzadGateway.left(answer)
+      if (available !== told.available) {
+        told.available = available
+        yield* told.say(available)
+      }
+      return { answer, available }
+    })
+    const account = yield* ctx.rpc
       .register(HamzadBalance.Definition, {
         get: (input) =>
-          Effect.gen(function* () {
-            const key = secret((yield* activeCredential(ctx, integrationID)).credential)
-            if (!key) return null
-            return yield* cache
-              .get({
-                key: `hamzad:balance:${api}:${SharedCache.fingerprint(key)}`,
-                interval: "30 seconds",
-                force: input.fresh,
-                load: HamzadGateway.balance(http, api, key),
-              })
-              .pipe(
-                Effect.map((available) => ({ available })),
-                Effect.orElseSucceed(() => null),
-              )
-          }),
+          usage(input.fresh).pipe(Effect.map((current) => (current ? { available: current.available } : null))),
+        usage: (input) =>
+          usage(input.fresh).pipe(
+            Effect.map((current) => {
+              if (!current) return null
+              const day = HamzadGateway.today(new Date())
+              const spent = current.answer.byDay?.find((item) => item.day === day)
+              return {
+                available: current.available,
+                pending: current.answer.pendingCredits ?? 0,
+                today: { requests: spent?.requests ?? 0, credits: spent?.credits ?? 0 },
+                days: current.answer.days ?? 30,
+                total: current.answer.total ?? { requests: 0, credits: 0, promptTokens: 0, completionTokens: 0 },
+                models: (current.answer.byModel ?? []).map((model) => ({
+                  id: model.modelId,
+                  requests: model.requests,
+                  credits: model.credits,
+                  promptTokens: model.promptTokens,
+                  completionTokens: model.completionTokens,
+                })),
+              }
+            }),
+          ),
       })
       .pipe(Effect.orDie)
+    told.say = (available) => account.events.emit("changed", { available }).pipe(Effect.ignore)
   }),
 } satisfies PluginInternal.InternalPlugin)
 

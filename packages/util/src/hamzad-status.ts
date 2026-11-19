@@ -45,6 +45,15 @@ export function reason(state: State) {
 export const prompt = (state: State) => (state === "sign-in" ? signedOut : reason(state))
 
 /**
+ * One line for a person asking what their account has left and used, when there is no answer to
+ * show: nobody is signed in, or the gateway gave none for one of the reasons above.
+ */
+export function account(state: State, signedIn: boolean) {
+  if (!signedIn) return state === "listed" || state === "sign-in" ? signedOut : (reason(state) ?? signedOut)
+  return reason(state) ?? unreachable
+}
+
+/**
  * What the sign-in by approving the device says when it cannot go on, by the code the API or the
  * panel gave. These routes answer in the API's own shape, with a Persian message meant for the
  * panel, so the words here are chosen by the code alone.

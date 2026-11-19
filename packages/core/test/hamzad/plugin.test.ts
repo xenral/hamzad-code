@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { Agent } from "@opencode/core/agent"
 import { Credential } from "@opencode/core/credential"
+import { HamzadGateway } from "@opencode/core/hamzad/gateway"
 import { HamzadModels } from "@opencode/core/hamzad/models"
 import { HamzadPlugin } from "@opencode/core/hamzad/plugin"
 import { Integration } from "@opencode/core/integration"
@@ -118,9 +119,36 @@ function gateway(
       }
       if (path === "/api/v1/llm/usage/summary") {
         state.balance -= 3
+        // The gateway's answer, field for field: `available` is whole, with what is used and not
+        // yet charged rounded up against it.
         return Response.json({
-          balance: { credits: state.balance, reserved: 0, available: state.balance },
-          pendingCredits: 0,
+          balance: { credits: state.balance + 2, reserved: 500, available: state.balance },
+          pendingCredits: 2.4137,
+          days: 30,
+          total: { requests: 12, credits: 4.4137, promptTokens: 24132, completionTokens: 181 },
+          byDay: [
+            { day: "2026-01-01", requests: 2, credits: 2 },
+            { day: HamzadGateway.today(new Date()), requests: 10, credits: 2.4137 },
+          ],
+          byModel: [
+            {
+              modelId: "deepseek",
+              requests: 7,
+              credits: 3.156,
+              promptTokens: 9112,
+              cachedTokens: 0,
+              completionTokens: 120,
+            },
+            {
+              modelId: "claude-sonnet",
+              requests: 5,
+              credits: 1.2577,
+              promptTokens: 15020,
+              cachedTokens: 2048,
+              completionTokens: 61,
+            },
+          ],
+          byKey: [{ keyId: null, name: null, requests: 12, credits: 4.4137 }],
         })
       }
       if (path === "/api/v1/llm/models") {
@@ -455,7 +483,7 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
     ),
   )
 
-  it.live("answers the interface with the credits left, and nothing while signed out", () =>
+  it.live("answers the interface with the credits left, to the hundredth, and nothing while signed out", () =>
     served({}, () =>
       Effect.gen(function* () {
         yield* addPlugin()
@@ -464,15 +492,55 @@ describe.skipIf(!Brand.isHamzad)("HamzadPlugin", () => {
         expect(yield* balance()).toBeNull()
         yield* withEnv({ HAMZAD_API_KEY: key }, () =>
           Effect.gen(function* () {
-            expect(yield* balance()).toEqual({ available: 497 })
+            // 497 whole credits, of which 2.4137 pending was counted as 3.
+            expect(yield* balance()).toEqual({ available: 497.58 })
             // The server remembers the answer for a moment; a finished request asks past that.
-            expect(yield* balance()).toEqual({ available: 497 })
-            expect(yield* balance(true)).toEqual({ available: 494 })
+            expect(yield* balance()).toEqual({ available: 497.58 })
+            expect(yield* balance(true)).toEqual({ available: 494.58 })
           }),
         )
       }),
     ),
   )
+
+  it.live("answers `/usage` with today, the last month and each model, and nothing while signed out", () =>
+    served({}, () =>
+      Effect.gen(function* () {
+        yield* addPlugin()
+        const rpc = yield* Rpc.Service
+        expect(yield* rpc.call("hamzad.balance", "usage", {})).toBeNull()
+        yield* withEnv({ HAMZAD_API_KEY: key }, () =>
+          Effect.gen(function* () {
+            expect<unknown>(yield* rpc.call("hamzad.balance", "usage", { fresh: true })).toEqual({
+              available: 497.58,
+              pending: 2.4137,
+              today: { requests: 10, credits: 2.4137 },
+              days: 30,
+              total: { requests: 12, credits: 4.4137, promptTokens: 24132, completionTokens: 181 },
+              models: [
+                { id: "deepseek", requests: 7, credits: 3.156, promptTokens: 9112, completionTokens: 120 },
+                { id: "claude-sonnet", requests: 5, credits: 1.2577, promptTokens: 15020, completionTokens: 61 },
+              ],
+            })
+            // One answer from the gateway serves the figure under the prompt as well.
+            expect(yield* rpc.call("hamzad.balance", "get", {})).toEqual({ available: 497.58 })
+          }),
+        )
+      }),
+    ),
+  )
+
+  test("what is left is the whole credits the gateway reports plus the part of a credit it rounded away", () => {
+    const answer = (available: number, pendingCredits?: number) => ({ balance: { available }, pendingCredits })
+    expect(HamzadGateway.left(answer(1200, 2.4137))).toBe(1200.58)
+    expect(HamzadGateway.left(answer(1200, 0))).toBe(1200)
+    expect(HamzadGateway.left(answer(1200, 3))).toBe(1200)
+    expect(HamzadGateway.left(answer(1200))).toBe(1200)
+    expect(HamzadGateway.left(answer(11, 0.0042))).toBe(11.99)
+    expect(HamzadGateway.left(answer(1200, 1.65))).toBe(1200.35)
+    // Nothing to spend is nothing, whatever is pending.
+    expect(HamzadGateway.left(answer(0, 4.5))).toBe(0)
+  })
 
   it.live("says how to sign in when the gateway wants a key, and leaves every other refusal in its words", () =>
     served({}, () =>
