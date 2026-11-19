@@ -15,3 +15,15 @@ export function needed(providerID: string, integrations: readonly Pick<Integrati
     !integrations.some((integration) => integration.id === "hamzad" && integration.connections.length > 0)
   )
 }
+
+/**
+ * Whether a person has anything to connect besides Hamzad: only when upstream's providers are
+ * brought back with HAMZAD_UPSTREAM_PROVIDERS. Upstream's build always has.
+ */
+export const others = () =>
+  !Brand.isHamzad || ["1", "true"].includes(process.env.HAMZAD_UPSTREAM_PROVIDERS?.toLowerCase() ?? "")
+
+/** The model picker's footer, without the offer to connect another provider where there is none. */
+export function offered<Action extends { readonly command?: string }>(actions: Action[]): Action[] {
+  return others() ? actions : actions.filter((action) => action.command !== "model.dialog.provider")
+}

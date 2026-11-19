@@ -13,6 +13,7 @@ import { useLocation } from "../context/location"
 import { useNewDesigns } from "../config"
 import { DialogFreeModels } from "./dialog-model-free"
 import { FavoriteMarker, isFreeModel, prioritizeFavorites, sortModelOptions } from "./model-options"
+import { HamzadSignIn } from "../hamzad/sign-in"
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
@@ -198,7 +199,7 @@ function DialogConnectedModels(props: {
       searchInTitle
       titlePlaceholder="Search models"
       options={options()}
-      actions={[
+      actions={HamzadSignIn.offered([
         {
           command: "model.dialog.provider",
           title: newDesigns()
@@ -218,7 +219,7 @@ function DialogConnectedModels(props: {
             local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
           },
         },
-      ]}
+      ])}
       onFilter={setQuery}
       flat={true}
       skipFilter={true}
