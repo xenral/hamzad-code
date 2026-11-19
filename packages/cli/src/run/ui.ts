@@ -1,4 +1,5 @@
 import { EOL } from "node:os"
+import { HamzadRunRtl } from "../hamzad/rtl"
 
 export const Style = {
   TEXT_DIM: "\x1b[90m",
@@ -8,7 +9,7 @@ export const Style = {
 }
 
 export function println(...message: string[]) {
-  process.stderr.write(message.join(" ") + EOL)
+  process.stderr.write(HamzadRunRtl.line(message.join(" ")) + EOL)
 }
 
 let blank = false
