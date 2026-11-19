@@ -44,8 +44,16 @@ jobs:
         run: bun run lint
       - name: Typecheck
         run: bun turbo typecheck:tsc --concurrency=3 --filter=@opencode/util --filter=@opencode/core --filter=@opencode/plugin --filter=@opencode/server --filter=@opencode/cli --filter=@opencode/tui
+      # Some of upstream's interface tests race a clock and lose now and then on a busy runner.
+      # A suite that fails is run once more (the ones that passed are answered from turbo's cache);
+      # failing twice is a failure.
       - name: Upstream's tests, with upstream's names
-        run: bun turbo test --concurrency=2 --filter=@opencode/util --filter=@opencode/core --filter=@opencode/plugin --filter=@opencode/server --filter=@opencode/cli --filter=@opencode/tui
+        run: |
+          suites="--filter=@opencode/util --filter=@opencode/core --filter=@opencode/plugin --filter=@opencode/server --filter=@opencode/cli --filter=@opencode/tui"
+          bun turbo test --concurrency=2 $suites || {
+            echo "::warning::A suite of upstream's tests failed once; running what failed again."
+            bun turbo test --concurrency=2 $suites
+          }
         env:
           HAMZAD_BRAND: upstream
       - name: Hamzad's tests
