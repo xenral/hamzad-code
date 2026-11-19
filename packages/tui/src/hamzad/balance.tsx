@@ -2,6 +2,7 @@ import { HamzadBalance } from "@opencode/core/hamzad/balance"
 import { Plugin } from "@opencode/plugin/tui"
 import { Brand } from "@opencode/util/brand"
 import { createSignal, Show } from "solid-js"
+import { askAgainSoon } from "./soon"
 
 // How often the figure is asked for again while nothing else prompts it: credits also move when the
 // person tops up in the panel or works in another window.
@@ -26,20 +27,25 @@ export default Plugin.define({
     if (!Brand.isHamzad) return
     const rpc = context.client.rpc(HamzadBalance.Definition)
     const turn = { value: 0 }
+    const again = askAgainSoon()
     const load = (fresh: boolean) => {
       const current = ++turn.value
       const directory = context.location?.directory
       void rpc.get({ fresh }, directory ? { location: { directory } } : undefined).then(
         (next) => {
+          again.answered()
           if (current === turn.value) setAvailable(next?.available)
         },
-        () => undefined,
+        () => {
+          if (current === turn.value) again.refused(() => load(fresh))
+        },
       )
     }
     load(false)
     const timer = setInterval(() => load(false), EVERY)
     const stop = [
       () => clearInterval(timer),
+      () => again.stop(),
       rpc.events.on("changed", (event) => {
         turn.value++
         setAvailable(event.data.available)

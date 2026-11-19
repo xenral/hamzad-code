@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin/tui"
 import { Brand } from "@opencode/util/brand"
 import { HamzadStatus } from "@opencode/util/hamzad-status"
 import { createMemo, createSignal, Show } from "solid-js"
+import { askAgainSoon } from "./soon"
 
 /**
  * Under the prompt, one line saying why Hamzad lists no models: its API is not open yet, a sign-in
@@ -26,15 +27,20 @@ export default Plugin.define({
   setup(context) {
     if (!Brand.isHamzad) return
     const rpc = context.client.rpc(HamzadStatus.definition)
+    const again = askAgainSoon()
     const load = () => {
       const directory = context.location?.directory
       void rpc.get({}, directory ? { location: { directory } } : undefined).then(
-        (answer) => setState(HamzadStatus.read(answer)),
-        () => undefined,
+        (answer) => {
+          again.answered()
+          setState(HamzadStatus.read(answer))
+        },
+        () => again.refused(load),
       )
     }
     load()
     const stop = [
+      () => again.stop(),
       context.data.on("server.connected", load),
       context.data.on("credential.switched", load),
       rpc.events.on("changed", (event) => void setState(HamzadStatus.read(event.data))),
