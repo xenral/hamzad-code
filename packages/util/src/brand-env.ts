@@ -14,6 +14,7 @@ const own = new Set([
   "HAMZAD_CLI_URL",
   "HAMZAD_ENV",
   "HAMZAD_UPSTREAM_PROVIDERS",
+  "HAMZAD_RTL",
 ])
 
 // A stock OpenCode setup may export these for its own files. Following them would put both tools
