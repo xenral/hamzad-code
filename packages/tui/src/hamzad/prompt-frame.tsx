@@ -9,6 +9,7 @@ import { useTheme } from "../context/theme"
 import { contextUsage, formatContextUsage } from "../util/session"
 import { stringWidth } from "../util/string-width"
 import { left as credits } from "./balance"
+import { shortFolder } from "./conversation"
 import { Edge, Sides } from "./frame"
 import { framed } from "./look"
 
@@ -41,6 +42,9 @@ export function HamzadPromptFrame(props: {
   const dimensions = useTerminalDimensions()
   const menu = Keymap.useShortcut("command.palette.show")
   const work = useWork(() => props.sessionID)
+  // A long folder is shortened from its start rather than pushing the credits or the menu's key out.
+  const folder = () =>
+    props.folder ? shortFolder(props.folder, Math.max(16, Math.floor(dimensions().width * 0.35))) : undefined
   // What the bottom edge says on its right, in order. When the window is too narrow the context
   // figure goes first, then the counts, then the menu's key; the credits stay.
   const status = createMemo(() => {
@@ -56,7 +60,7 @@ export function HamzadPromptFrame(props: {
           ]),
     ].filter((item): item is { text: string; drop: number } => Boolean(item.text))
     // The frame's edge less its corners, the screen's margins, the spaces around both sides and the folder.
-    const room = dimensions().width - 14 - (props.folder ? stringWidth(props.folder) + 2 : 0)
+    const room = dimensions().width - 14 - (folder() ? stringWidth(folder()!) + 2 : 0)
     const shown = [...items]
     for (const level of [1, 2, 3]) {
       if (stringWidth(shown.map((item) => item.text).join(" · ")) <= room) break
@@ -93,9 +97,9 @@ export function HamzadPromptFrame(props: {
         side="bottom"
         bare
         left={
-          props.folder ? (
+          folder() ? (
             <text fg={theme.text.muted} wrapMode="none" truncate flexShrink={1} minWidth={0}>
-              {` ${props.folder} `}
+              {` ${folder()} `}
             </text>
           ) : undefined
         }

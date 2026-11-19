@@ -33,6 +33,10 @@ export function Edge(props: {
   color?: RGBA
   /** Whether the left side spaces itself, for content that may turn out to be empty. */
   bare?: boolean
+  /** Columns the left side keeps however little room there is, e.g. for a name that must show. */
+  leftMin?: number
+  /** Whether the right side may give way too, after the left has given what it can. */
+  rightShrinks?: boolean
 }) {
   const theme = useTheme()
   const dimensions = useTerminalDimensions()
@@ -49,7 +53,7 @@ export function Edge(props: {
         <box
           flexDirection="row"
           flexShrink={1}
-          minWidth={0}
+          minWidth={props.leftMin ?? 0}
           paddingLeft={props.bare ? 0 : 1}
           paddingRight={props.bare ? 0 : 1}
         >
@@ -66,7 +70,7 @@ export function Edge(props: {
         customBorderChars={rounded}
       />
       <Show when={props.right}>
-        <box flexDirection="row" flexShrink={0} paddingLeft={1} paddingRight={1}>
+        <box flexDirection="row" flexShrink={props.rightShrinks ? 1 : 0} minWidth={0} paddingLeft={1} paddingRight={1}>
           {props.right}
         </box>
       </Show>
