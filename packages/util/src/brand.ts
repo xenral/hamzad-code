@@ -43,8 +43,6 @@ interface Profile {
    * How this program names itself to a server whose sign-in it asks for: the name and address a
    * consent page shows, and the published document describing it, where one exists.
    */
-  /** The interface's theme when a person has chosen none. */
-  readonly theme: string
   /** How an agent is named to a person, where it is not its id title-cased. Ids stay as they are. */
   readonly agents: Readonly<Record<string, string>>
   /** One quiet line under the wordmark on the home screen. */
@@ -99,7 +97,6 @@ const upstream: Profile = {
     policy: "notify",
   },
   config: { names: [], file: "opencode.jsonc" },
-  theme: "opencode",
   agents: {},
   tagline: undefined,
   client: {
@@ -166,7 +163,6 @@ const hamzad: Profile = {
   config: { names: ["hamzad.json", "hamzad.jsonc"], file: "hamzad.jsonc" },
   // No document is published for this build yet, so it registers itself with each server instead.
   client: { name: "Hamzad", uri: site, logo: undefined, metadata: undefined },
-  theme: "hamzad",
   // The agent that writes code is the one most people use; "Build" reads as a build system.
   agents: { build: "Code" },
   // همزاد is a twin.
@@ -208,7 +204,6 @@ export const scope = profile.scope
 export const update = profile.update
 export const config = profile.config
 export const client = profile.client
-export const theme = profile.theme
 export const agents = profile.agents
 export const tagline = profile.tagline
 export const ripgrep = profile.ripgrep

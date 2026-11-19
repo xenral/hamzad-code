@@ -1,28 +1,29 @@
 import { HamzadBalance } from "@opencode/core/hamzad/balance"
 import { Plugin } from "@opencode/plugin/tui"
 import { Brand } from "@opencode/util/brand"
-import { useTerminalDimensions } from "@opentui/solid"
 import { createSignal, Show } from "solid-js"
-
-// Below this width the line under the prompt has no room beside the context and cost figures.
-const FOOTER_MIN_WIDTH = 100
 
 // How often the figure is asked for again while nothing else prompts it: credits also move when the
 // person tops up in the panel or works in another window.
 const EVERY = 60_000
 
+// One interface per process, so the figure is kept here for the prompt's frame to read.
+const [available, setAvailable] = createSignal<number>()
+
+/** The credits left, as last heard; nothing while signed out or before the first answer. */
+export const left = available
+
 /**
- * The credits the account has left, beside what the session has spent: in the sidebar, under a
- * session's prompt on a wide terminal, and on the home screen's last line. To the hundredth, since a prompt on a small model costs less than
- * a credit and a whole number would stand still. Asked again whenever a request finishes, since
- * that is when the balance moves, once a minute besides, and whenever the server learns a new
- * figure, as it does when `/usage` opens. Hidden while signed out.
+ * The credits the account has left, beside what the session has spent: in the sidebar and on
+ * the prompt's frame. To the hundredth, since a prompt on a small model costs less than a credit
+ * and a whole number would stand still. Asked again whenever a request finishes, since that is
+ * when the balance moves, once a minute besides, and whenever the server learns a new figure, as
+ * it does when `/usage` opens. Hidden while signed out.
  */
 export default Plugin.define({
   id: "hamzad.balance",
   setup(context) {
     if (!Brand.isHamzad) return
-    const [available, setAvailable] = createSignal<number>()
     const rpc = context.client.rpc(HamzadBalance.Definition)
     const turn = { value: 0 }
     const load = (fresh: boolean) => {
@@ -60,32 +61,6 @@ export default Plugin.define({
             </text>
             <text fg={context.theme.text.muted}>{Brand.money.exact(available() ?? 0)} left</text>
           </box>
-        </Show>
-      ),
-    })
-
-    context.ui.slot({
-      append: "prompt.footer.status",
-      // On the home screen the figure is on the line with the version instead.
-      render: (props) => {
-        const dimensions = useTerminalDimensions()
-        return (
-          <Show when={props.sessionID && available() !== undefined && dimensions().width >= FOOTER_MIN_WIDTH}>
-            <text fg={context.theme.text.muted} wrapMode="none" flexShrink={0}>
-              {Brand.money.exact(available() ?? 0)} left
-            </text>
-          </Show>
-        )
-      },
-    })
-
-    context.ui.slot({
-      append: "home.footer.status",
-      render: () => (
-        <Show when={available() !== undefined}>
-          <text fg={context.theme.text.muted} wrapMode="none" flexShrink={0}>
-            {Brand.money.exact(available() ?? 0)} left
-          </text>
         </Show>
       ),
     })

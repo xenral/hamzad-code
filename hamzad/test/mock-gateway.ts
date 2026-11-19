@@ -5,9 +5,11 @@
 //   HAMZAD_API_URL=http://127.0.0.1:8787/api/v1 bun run dev
 //
 // The chat route answers by what the conversation holds, so a test can drive it from the prompt:
-//   [[tool:NAME {json arguments}]]   the model calls that tool with those arguments, in fragments
+//   [[tool:NAME {json arguments}]]   the model calls that tool with those arguments, in fragments;
+//                                    several are called one after another, one per step
 //   [[refuse:CODE]]                  the request is refused before any output (see `refusals`)
 //   [[cut]]                          the stream breaks with an error after some text
+//   [[slow]]                         the reply arrives slowly, over several seconds, to watch it being written
 // After a tool result comes back, the reply quotes it, which proves the round trip.
 
 export const key = `sk-hmz-${"t".repeat(43)}`
@@ -391,13 +393,18 @@ export function start(
 
       const model = models.find((item) => item.id === chat.model)
       if (!model) return error("model_not_found")
-      const call = last?.role === "tool" ? null : /\[\[tool:([A-Za-z0-9_-]+) (\{.*?\})\]\]/s.exec(asked)
+      // One directive per step: the first before any tool result, the next after each result.
+      const answered = messages
+        .slice(messages.findLastIndex((message) => message.role === "user") + 1)
+        .filter((message) => message.role === "tool").length
+      const call = [...asked.matchAll(/\[\[tool:([A-Za-z0-9_-]+) (\{.*?\})\]\]/gs)][answered] ?? null
       const reply =
         last?.role === "tool"
           ? `The tool returned: ${text(last).slice(0, 400)}`
           : chat.tools?.length
             ? "Mock reply from Hamzad's stand-in gateway."
             : "Mock title"
+      const slow = asked.includes("[[slow]]") && last?.role !== "tool" && !call && Boolean(chat.tools?.length)
       const promptTokens = Math.ceil(raw.length / 4)
       const completionTokens = Math.ceil((call ? call[2].length : reply.length) / 4) + 1
       const cached = Math.floor(promptTokens / 2)
@@ -426,7 +433,12 @@ export function start(
                 index: 0,
                 delta: {
                   tool_calls: [
-                    { index: 0, id: "call_mock_1", type: "function", function: { name: call[1], arguments: "" } },
+                    {
+                      index: 0,
+                      id: `call_mock_${answered + 1}`,
+                      type: "function",
+                      function: { name: call[1], arguments: "" },
+                    },
                   ],
                 },
                 finish_reason: null,
@@ -485,7 +497,7 @@ export function start(
             controller.enqueue(encoder.encode(": keep-alive\n\n"))
             for (const frame of [...frames, ...tail, "data: [DONE]\n\n"]) {
               controller.enqueue(encoder.encode(frame))
-              await Bun.sleep(2)
+              await Bun.sleep(slow ? 900 : 2)
             }
             controller.close()
           },

@@ -1,4 +1,4 @@
-import { HamzadTheme } from "../hamzad/theme"
+import { Brand } from "@opencode/util/brand"
 import { DialogSelect, type DialogSelectRef } from "../ui/dialog-select"
 import { useThemes } from "../context/theme"
 import { useDialog } from "../ui/dialog"
@@ -10,7 +10,7 @@ export function DialogThemeList(props: { onClose?: () => void }) {
   const options = Object.keys(themes.all())
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
     .map((value) => ({
-      title: HamzadTheme.title(value),
+      title: value === "opencode" ? Brand.cli : value,
       value: value,
     }))
   const dialog = useDialog()

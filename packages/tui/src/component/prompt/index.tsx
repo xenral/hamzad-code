@@ -73,6 +73,9 @@ import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
 import { limitLabel, useUsageLimits } from "../usage"
 import { HamzadNames } from "../../hamzad/names"
+import { HamzadBar } from "../../hamzad/bar"
+import { HamzadLook } from "../../hamzad/look"
+import { HamzadCaret, HamzadPromptFrame } from "../../hamzad/prompt-frame"
 
 export type PromptProps = {
   sessionID?: string
@@ -1679,7 +1682,20 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        <box
+        <HamzadPromptFrame
+          agent={agentLabel()}
+          color={promptDisplay().agentColor}
+          model={promptDisplay().modelLabel}
+          provider={promptDisplay().providerLabel}
+          variant={promptDisplay().variant}
+          chosen={Boolean(local.model.current())}
+          shell={store.mode === "shell"}
+          running={status() === "running"}
+          armed={store.interrupt > 0}
+          folder={props.sessionID ? undefined : locationLabelDisplay()}
+          sessionID={props.sessionID}
+        >
+        <HamzadBar
           width="100%"
           border={["left"]}
           borderColor={borderHighlight()}
@@ -1689,11 +1705,11 @@ export function Prompt(props: PromptProps) {
           }}
         >
           <box
-            paddingLeft={dimensions().width < 44 ? 1 : 2}
-            paddingRight={dimensions().width < 44 ? 1 : 2}
-            paddingTop={1}
+            paddingLeft={HamzadLook.pad(dimensions().width < 44 ? 1 : 2)}
+            paddingRight={HamzadLook.pad(dimensions().width < 44 ? 1 : 2)}
+            paddingTop={HamzadLook.pad(1)}
             flexShrink={0}
-            backgroundColor={promptBg()}
+            backgroundColor={HamzadLook.flat(promptBg())}
             flexGrow={1}
             width="100%"
           >
@@ -1765,6 +1781,7 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Show>
+            <HamzadCaret shell={store.mode === "shell"} color={promptDisplay().agentColor}>
             <textarea
               width="100%"
               placeholder={placeholderText()}
@@ -1863,6 +1880,8 @@ export function Prompt(props: PromptProps) {
               cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
               syntaxStyle={syntax()}
             />
+            </HamzadCaret>
+            <Show when={!HamzadLook.framed}>
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <PromptMetadataRow
                 mode={store.mode}
@@ -1879,8 +1898,11 @@ export function Prompt(props: PromptProps) {
                 variantAlpha={variantMetaAlpha()}
               />
             </box>
+            </Show>
           </box>
-        </box>
+        </HamzadBar>
+        </HamzadPromptFrame>
+        <Show when={!HamzadLook.framed}>
         <box
           height={1}
           border={["left"]}
@@ -1992,6 +2014,7 @@ export function Prompt(props: PromptProps) {
             </Slot>
           </Slot>
         </box>
+        </Show>
       </box>
       <Autocomplete
         sessionID={props.sessionID}

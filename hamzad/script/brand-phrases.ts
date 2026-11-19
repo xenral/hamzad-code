@@ -26,7 +26,7 @@ export const phrases: readonly Phrase[] = [
     to: "Add input validation",
     whole: true,
   },
-  { file: tui("routes/home"), from: "Fix broken tests", to: "Write tests for the parser", whole: true },
+  { file: tui("routes/home"), from: "Fix broken tests", to: "Add tests for the parser", whole: true },
   {
     file: tui("mini/footer.prompt"),
     from: "Ask anything, / for commands, @ for context",
