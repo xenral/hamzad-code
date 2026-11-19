@@ -1693,6 +1693,7 @@ export function Prompt(props: PromptProps) {
           running={status() === "running"}
           armed={store.interrupt > 0}
           folder={props.sessionID ? undefined : locationLabelDisplay()}
+          sessionID={props.sessionID}
         >
         <HamzadBar
           width="100%"
