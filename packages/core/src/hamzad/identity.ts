@@ -1,7 +1,9 @@
 export * as HamzadIdentity from "./identity.js"
 
 // Upstream's prompts and built-in skills speak of OpenCode. This plugin corrects what the model is
-// told about the program it runs in, without touching upstream's prompt files.
+// told about the program it runs in, without touching upstream's prompt files. The build's text
+// transform already writes this build's name wherever upstream's stood; here the model is told the
+// fuller thing, that it is the command-line program and not the whole of Hamzad.
 
 import { define } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
@@ -9,8 +11,9 @@ import { Brand } from "@opencode/util/brand"
 import { Effect } from "effect"
 import type { PluginInternal } from "../plugin/internal.js"
 
-// Every upstream prompt names the harness in its first sentence, as "OpenCode" or "opencode".
-const name = /\bOpenCode\b|\bopencode\b/
+// Every upstream prompt names the harness in its first sentence, as "OpenCode" or "opencode", or,
+// once the transform has been over it, by this build's short name.
+const name = new RegExp(String.raw`\bOpenCode\b|\bopencode\b|\b${Brand.name}\b(?! CLI\b)`)
 
 /** The prompt with the harness named as this build, when its opening sentence names upstream's. */
 export function rename(prompt: string) {

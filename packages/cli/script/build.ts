@@ -17,6 +17,7 @@ import { resolveOpencodePty } from "./opencode-pty"
 import { NativeArch } from "../../../script/native-arch"
 import { bundledModelsSnapshot, modelsSnapshotPlugin } from "../../core/script/models-snapshot"
 import { mirrorPlugin } from "../../../hamzad/script/mirror-plugin"
+import { brandPlugin } from "../../../hamzad/script/brand-transform"
 
 const dir = path.resolve(import.meta.dirname, "..")
 const binary = Brand.cli
@@ -112,7 +113,9 @@ const pluginRuntimePlugin: BunPlugin = {
     }))
     build.onLoad({ filter: /[/\\]internal[/\\]httpApi(?:Scalar|Swagger)\.js$/ }, () => ({
       contents:
-        'export const css = ""; export const javascript = \'document.body.textContent = "Scalar/Swagger UI assets are not bundled in OpenCode"\'',
+        'export const css = ""; export const javascript = \'document.body.textContent = "Scalar/Swagger UI assets are not bundled in ' +
+        Brand.name +
+        "\"'",
       loader: "js",
     }))
   },
@@ -176,6 +179,8 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
     entrypoints: ["./src/index.ts", "./src/photon-worker.ts"],
     tsconfig: "./tsconfig.json",
     plugins: [
+      // The interface's components: ahead of the plugin that compiles them.
+      brandPlugin({ solid: solidPlugin, only: "components" }),
       appAssetsPlugin,
       solidPlugin,
       parcelWatcherPlugin,
@@ -185,6 +190,8 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
       simulationGraphPlugin,
       modelsSnapshot,
       mirrorPlugin,
+      // Every other source: after the plugins that replace a file or record which files are bundled.
+      brandPlugin({ only: "sources" }),
     ],
     external: ["node-gyp"],
     format: "esm",

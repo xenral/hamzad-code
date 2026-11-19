@@ -1,5 +1,6 @@
 import { Effect, FileSystem, Formatter, Logger, Option, Schedule, Stream, type LogLevel } from "effect"
 import path from "path"
+import { Brand } from "../brand.js"
 import { Global } from "../global.js"
 import { runID } from "./shared.js"
 
@@ -57,8 +58,8 @@ function format(input: unknown) {
 }
 
 export function file(local = true, channel = "local") {
-  if (!local) return path.join(Global.Path.log, "opencode.log")
-  return path.join(Global.Path.log, `opencode-${channel.replace(/[^a-zA-Z0-9._-]/g, "-")}.log`)
+  if (!local) return path.join(Global.Path.log, `${Brand.app}.log`)
+  return path.join(Global.Path.log, `${Brand.app}-${channel.replace(/[^a-zA-Z0-9._-]/g, "-")}.log`)
 }
 
 export function fileLogger(target = file(), id: string = runID()) {

@@ -35,6 +35,13 @@ describe.skipIf(!Brand.isHamzad)("HamzadIdentity", () => {
       "# Code comments\nMention opencode later.",
     )
   })
+
+  test("names the command-line program where the build has already written its own short name", () => {
+    expect(HamzadIdentity.rename("You are Hamzad, an agent.\nHamzad stays.")).toBe(
+      "You are Hamzad CLI, an agent.\nHamzad stays.",
+    )
+    expect(HamzadIdentity.rename("You are Hamzad CLI, an agent.")).toBe("You are Hamzad CLI, an agent.")
+  })
 })
 
 describe.skipIf(!Brand.isHamzad)("HamzadPlugins.arrange", () => {

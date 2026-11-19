@@ -39,6 +39,43 @@ describe("brand", () => {
     expect(result).toEqual(["0.03 cr", "12.5 cr", "1,235 cr", "3.00 cr", "1,935 cr"])
   })
 
+  test("what is left is always written to the hundredth", () => {
+    const result = run(
+      `const { Brand } = await import(${JSON.stringify(brand)});` +
+        `console.log(JSON.stringify([Brand.money.exact(1200.58), Brand.money.exact(1200), Brand.money.exact(0.04), Brand.money.exact(1234567.5)]))`,
+    )
+    expect(result).toEqual(["1,200.58 cr", "1,200.00 cr", "0.04 cr", "1,234,567.50 cr"])
+  })
+
+  const settings = `console.log(JSON.stringify({ policy: Brand.update.policy, config: Brand.config, client: Brand.client, host: Brand.host }))`
+
+  test("a new version installs itself, the config file may carry this build's name, and servers are told who asks", () => {
+    const result = run(`const { Brand } = await import(${JSON.stringify(brand)}); ${settings}`)
+    expect(result).toEqual({
+      policy: "auto",
+      config: { names: ["hamzad.json", "hamzad.jsonc"], file: "hamzad.jsonc" },
+      client: { name: "Hamzad", uri: "https://hamzad.ai" },
+      host: "hamzad.ai",
+    })
+  })
+
+  test("the upstream profile keeps upstream's update policy, config names and client", () => {
+    const result = run(`const { Brand } = await import(${JSON.stringify(brand)}); ${settings}`, {
+      HAMZAD_BRAND: "upstream",
+    })
+    expect(result).toEqual({
+      policy: "notify",
+      config: { names: [], file: "opencode.jsonc" },
+      client: {
+        name: "opencode",
+        uri: "https://opencode.ai",
+        logo: "https://opencode.ai/web-app-manifest-512x512.png",
+        metadata: "https://opencode.ai/oauth/opencode/client.json",
+      },
+      host: "opencode.ai",
+    })
+  })
+
   test("every row of a logo half has the same width", () => {
     const result = run(
       `const { Brand } = await import(${JSON.stringify(brand)}); console.log(JSON.stringify(Brand.logo))`,

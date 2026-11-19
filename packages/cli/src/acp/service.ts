@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/brand"
 import type { OpenCodeClient } from "@opencode/client/effect"
 import { AbsolutePath } from "@opencode/schema/schema"
 import { Session } from "@opencode/schema/session"
@@ -127,7 +128,7 @@ export function make(input: {
       }
       if (params.clientCapabilities?._meta?.["terminal-auth"] === true) {
         authMethod._meta = {
-          "terminal-auth": { command: "opencode", args: ["auth", "login"], label: "OpenCode Login" },
+          "terminal-auth": { command: Brand.cli, args: ["auth", "login"], label: "OpenCode Login" },
         }
       }
       return {

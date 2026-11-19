@@ -11,6 +11,8 @@
 // the wordmark is the same geometry as `packages/ui/src/components/logo.tsx`.
 // Keep this file in sync with those sources when the brand changes.
 
+import { Brand } from "@opencode/util/brand"
+
 export interface CallbackPageOptions {
   /** Friendly integration name shown as a subtitle, e.g. "xAI", "Snowflake", "MCP". */
   provider?: string
@@ -250,7 +252,9 @@ const STYLES = `
 `
 
 // OpenCode wordmark — same path geometry as packages/ui/src/components/logo.tsx (Logo).
-const WORDMARK = `<svg class="wordmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 234 42" fill="none" aria-label="OpenCode" role="img">
+const WORDMARK = Brand.isHamzad
+  ? `<span class="wordmark" style="font:600 19px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:-0.01em">${Brand.name}</span>`
+  : `<svg class="wordmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 234 42" fill="none" aria-label="OpenCode" role="img">
         <path d="M18 30H6V18H18V30Z" fill="var(--oc-icon-weak)" />
         <path d="M18 12H6V30H18V12ZM24 36H0V6H24V36Z" fill="var(--oc-icon-base)" />
         <path d="M48 30H36V18H48V30Z" fill="var(--oc-icon-weak)" />

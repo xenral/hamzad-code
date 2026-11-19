@@ -1,4 +1,4 @@
-preload = ["@opentui/solid/preload"]
+preload = ["../../hamzad/script/brand-preload.ts", "@opentui/solid/preload"]
 
 [test]
-preload = ["@opentui/solid/preload", "./test/preload.ts"]
+preload = ["../../hamzad/script/brand-preload.ts", "@opentui/solid/preload", "./test/preload.ts"]

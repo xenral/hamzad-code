@@ -31,6 +31,23 @@ interface Profile {
     readonly package: RegExp
     readonly installer: string
     readonly release: (input: { channel: string; artifact: string; distribution: string; current: string }) => string
+    /** What a new version does when the person's config says nothing: install itself, or only say so. */
+    readonly policy: "auto" | "notify"
+  }
+  /**
+   * The config file: names read besides upstream's, which a project may already have, and the name
+   * a new one is written under.
+   */
+  readonly config: { readonly names: readonly string[]; readonly file: string }
+  /**
+   * How this program names itself to a server whose sign-in it asks for: the name and address a
+   * consent page shows, and the published document describing it, where one exists.
+   */
+  readonly client: {
+    readonly name: string
+    readonly uri: string
+    readonly logo: string | undefined
+    readonly metadata: string | undefined
   }
   /** Where ripgrep's release archives are fetched from; the pinned checksums stay upstream's. */
   readonly ripgrep: string
@@ -42,6 +59,8 @@ interface Profile {
   readonly money: {
     /** A spent amount. */
     readonly format: (value: number) => string
+    /** An amount a person watches move, such as what is left: always to the hundredth. */
+    readonly exact: (value: number) => string
     /** A spent amount with two decimals, for tables. */
     readonly fixed: (value: number) => string
     /** A price per million tokens; `value` is already rounded for display. */
@@ -71,11 +90,20 @@ const upstream: Profile = {
     installer: "https://opencode.ai/v2/install",
     release: (input) =>
       `https://opencode.ai/update/api/${encodeURIComponent(input.channel)}/${encodeURIComponent(input.artifact)}/${input.distribution}?current=${encodeURIComponent(input.current)}`,
+    policy: "notify",
+  },
+  config: { names: [], file: "opencode.jsonc" },
+  client: {
+    name: "opencode",
+    uri: "https://opencode.ai",
+    logo: "https://opencode.ai/web-app-manifest-512x512.png",
+    metadata: "https://opencode.ai/oauth/opencode/client.json",
   },
   ripgrep: "https://github.com/BurntSushi/ripgrep/releases/download",
   grammars: undefined,
   money: {
     format: (value) => usd.format(value),
+    exact: (value) => usd.format(value),
     fixed: (value) => `$${value.toFixed(2)}`,
     rate: (value) => `$${value}`,
   },
@@ -122,11 +150,20 @@ const hamzad: Profile = {
     // A static file per channel; the query is ignored by the host and kept for its logs.
     release: (input) =>
       `${downloads}/${encodeURIComponent(input.channel)}.json?current=${encodeURIComponent(input.current)}`,
+    // A release is small and frequent, and a person who installed with one command expects to stay
+    // current without another. `"update": "notify"` or `"disable"` in the config turns it down.
+    policy: "auto",
   },
+  config: { names: ["hamzad.json", "hamzad.jsonc"], file: "hamzad.jsonc" },
+  // No document is published for this build yet, so it registers itself with each server instead.
+  client: { name: "Hamzad", uri: site, logo: undefined, metadata: undefined },
   ripgrep: `${downloads}/mirror/rg`,
   grammars: `${downloads}/mirror/ts`,
   money: {
     format: credits,
+    // A prompt on a small model costs a few hundredths of a credit: without them the figure never moves.
+    exact: (value) =>
+      `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} cr`,
     fixed: (value) => `${value.toFixed(2)} cr`,
     rate: (value) => `${value} cr`,
   },
@@ -155,6 +192,8 @@ export const port = profile.port
 export const docs = profile.docs
 export const scope = profile.scope
 export const update = profile.update
+export const config = profile.config
+export const client = profile.client
 export const ripgrep = profile.ripgrep
 export const grammars = profile.grammars
 export const money = profile.money
@@ -168,8 +207,14 @@ export function api() {
   return (process.env.HAMZAD_API_URL || `${site}/api/v1`).replace(/\/+$/, "")
 }
 
+/** The site's name as a person types it, where upstream signs a card with its own. */
+export const host = profile === hamzad ? new URL(site).host : "opencode.ai"
+
 /** Where a person adds credits. */
 export const billing = `${site}/panel/billing`
+
+/** Where a person sees their keys and their usage in full. */
+export const settings = `${site}/panel/settings`
 
 /** Where a crash is reported. It carries the build's version and nothing about the crash itself. */
 export function support(version: string) {

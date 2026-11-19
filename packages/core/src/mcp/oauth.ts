@@ -1,5 +1,6 @@
 export * as McpOAuth from "./oauth.js"
 
+import { Brand } from "@opencode/util/brand"
 import {
   auth,
   LATEST_PROTOCOL_VERSION,
@@ -33,7 +34,7 @@ import type { Integration } from "../integration.js"
 import { ErrorSummary } from "../util/error-summary.js"
 
 /** Client ID Metadata Document: servers that support CIMD accept this URL as the client_id without registration. */
-export const CLIENT_METADATA_URL = "https://opencode.ai/oauth/opencode/client.json"
+export const CLIENT_METADATA_URL = Brand.client.metadata ?? ""
 
 // The authorization server refused the refresh token or the client: only a new login helps.
 class RefreshRejected extends Data.TaggedError("McpOAuth.RefreshRejected")<{ readonly message: string }> {}
@@ -164,9 +165,9 @@ const provider = (options: Options): OAuthClientProvider => {
     state: () => redirect.state,
     clientMetadata: {
       redirect_uris: redirect.registered,
-      client_name: "opencode",
-      client_uri: "https://opencode.ai",
-      logo_uri: "https://opencode.ai/web-app-manifest-512x512.png",
+      client_name: Brand.client.name,
+      client_uri: Brand.client.uri,
+      ...(Brand.client.logo ? { logo_uri: Brand.client.logo } : {}),
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: client?.client_secret ? "client_secret_post" : "none",
@@ -532,6 +533,7 @@ export const authorize = (input: {
       catch: (error) => (error instanceof Error ? error : new Error(String(error))),
     })
     const cimd =
+      CLIENT_METADATA_URL !== "" &&
       !oauth?.client_id &&
       !oauth?.redirect_uri &&
       discovery.authorizationServerMetadata?.client_id_metadata_document_supported === true &&
