@@ -390,7 +390,8 @@ try {
   // The interface itself: the credits left move when a prompt is answered, and `/usage` is Hamzad's.
   // A pseudo-terminal is needed, which Windows does not give a child process this way.
   if (process.platform !== "win32") {
-    const left = (text: string) => [...text.matchAll(/([\d,]+\.\d\d) cr left/g)].at(-1)?.[1]
+    // On the home screen's last line ("… cr left") and on the prompt's frame ("… cr · ctrl+p menu").
+    const left = (text: string) => [...text.matchAll(/([\d,]+\.\d\d) cr(?: left| · ctrl)/g)].at(-1)?.[1]
     const amount = (figure: string | undefined) =>
       figure === undefined ? Number.NaN : Number(figure.replace(/,/g, ""))
     // No look for a new version here: that would be a call to Hamzad's own site, checked further down.
@@ -403,11 +404,11 @@ try {
       }
       const shown = await screen.until(() => left(screen.text()) !== undefined)
       const before = await figure()
-      // The home screen in Hamzad's words: the line under the wordmark, the prompt, the mode.
+      // The home screen: the line under the wordmark, and the prompt in its frame, named by mode and model.
       const drawn = screen.redraw()
-      const own = ["your coding twin", "Tell Hamzad what to do", "Code · ", "shift+tab mode"]
+      const own = ["your coding twin", "╭─ Code · Claude Sonnet", "❯ Tell Hamzad what to do", "ctrl+p menu ─╯"]
       check(
-        "the home screen speaks as Hamzad: its line, its prompt, Code as the mode",
+        "the home screen shows the framed prompt, named by mode and model, and Hamzad's line",
         await screen.until(() => own.every((word) => screen.text().slice(drawn).includes(word)), 15_000),
         { missing: own.filter((word) => !screen.text().slice(drawn).includes(word)) },
       )
@@ -417,7 +418,7 @@ try {
         screen.text().slice(-600),
       )
       const charged = gateway.state.spent
-      screen.type("Say hello.")
+      screen.type(`Say what the note holds. [[tool:read ${JSON.stringify({ path: "NOTES.txt" })}]]`)
       await Bun.sleep(500)
       screen.type("\r")
       await screen.until(() => gateway.state.spent > charged)
@@ -435,10 +436,21 @@ try {
         { before, after, charged: gateway.state.spent - charged },
       )
 
+      // The session: the conversation in its frame, each speaker marked, the tool step on one line.
+      const session = screen.redraw()
+      const framed = [
+        "╭─ hamzad",
+        "you › Say what the note holds.",
+        "◆ read",
+        "NOTES.txt",
+        "hamzad › The tool returned",
+        " cr",
+        "╰─",
+      ]
       check(
-        "an answer is signed with the mode that gave it",
-        await screen.until(() => screen.text().includes("Code · Claude Sonnet"), 15_000),
-        screen.text().slice(-400),
+        "the session shows the conversation in its frame, `you ›` and `hamzad ›`, and the tool step as one line",
+        await screen.until(() => framed.every((word) => screen.text().slice(session).includes(word)), 15_000),
+        { missing: framed.filter((word) => !screen.text().slice(session).includes(word)) },
       )
 
       const asked = gateway.requests.filter((request) => request.path === "/llm/usage/summary").length
