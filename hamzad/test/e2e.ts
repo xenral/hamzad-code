@@ -11,6 +11,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { Brand } from "../../packages/util/src/brand"
+import { HamzadRtl } from "../../packages/util/src/hamzad-rtl"
 import { key, panelKey, start } from "./mock-gateway"
 
 const root = path.join(import.meta.dir, "../..")
@@ -481,6 +482,54 @@ try {
       )
       console.log(`     window titles: ${JSON.stringify([...new Set(screen.titles())])}`)
     })
+  }
+
+  // Persian in VS Code's terminal, which draws text in the order it was written: the interface and a
+  // run printing to a terminal lay it out right to left with its letters joined. HAMZAD_RTL=off leaves
+  // it as written.
+  if (process.platform !== "win32") {
+    const sentence = "همزاد کنار کدت می‌نشیند"
+    const prompt = `[[tool:bash {"command":"echo ${sentence}","description":"Persian"}]]`
+    const seen = HamzadRtl.text(sentence)
+    const persian = (text: string) =>
+      text.split("\n").filter((line) => [...line].some((char) => char.codePointAt(0)! >= 0x600))
+    for (const off of [false, true]) {
+      await interactive(
+        { HAMZAD_DISABLE_AUTOUPDATE: "1", TERM_PROGRAM: "vscode", ...(off ? { HAMZAD_RTL: "off" } : {}) },
+        async (screen) => {
+          await screen.until(() => screen.text().includes("Tell Hamzad what to do"))
+          const start = screen.text().length
+          screen.type(prompt)
+          await Bun.sleep(500)
+          screen.type("\r")
+          await screen.until(() => screen.text().slice(start).includes("The tool returned"), 90_000)
+          await Bun.sleep(1000)
+          const [wanted, unwanted] = off ? [sentence, seen] : [seen, sentence]
+          const from = screen.redraw()
+          const shown = await screen.until(() => screen.text().slice(from).includes(wanted), 15_000)
+          const drawn = screen.text().slice(from)
+          check(
+            off
+              ? "with HAMZAD_RTL=off, Persian is shown as it was written"
+              : "in VS Code's terminal, Persian is shown right to left with its letters joined",
+            shown && !drawn.includes(unwanted),
+            persian(drawn).slice(0, 6),
+          )
+        },
+      )
+    }
+    await interactive(
+      { HAMZAD_DISABLE_AUTOUPDATE: "1", TERM_PROGRAM: "vscode" },
+      async (screen) => {
+        const done = await screen.until(() => screen.text().includes("The tool returned"), 90_000)
+        check(
+          "a run printing to VS Code's terminal writes Persian right to left with its letters joined",
+          done && screen.text().includes(seen) && !screen.text().includes(sentence),
+          persian(screen.text()).slice(0, 6),
+        )
+      },
+      ["run", "--standalone", "--auto", prompt],
+    )
   }
 
   const refused = await run([
