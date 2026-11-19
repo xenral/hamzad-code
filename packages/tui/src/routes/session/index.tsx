@@ -136,6 +136,12 @@ import { useEntryAnchor } from "./anchor-view"
 import { containsAnchor, createTimelineAnchors, groupID } from "./anchors"
 import { rowsAfter, rowsBefore, rowWeight } from "./mount-budget"
 import { HamzadNames } from "../../hamzad/names"
+import { HamzadAnswerFooter } from "../../hamzad/answer-footer"
+import { HamzadBar } from "../../hamzad/bar"
+import { HamzadConversation } from "../../hamzad/conversation"
+import { HamzadLook } from "../../hamzad/look"
+import { HamzadSpeaker } from "../../hamzad/speaker"
+import { HamzadToolStep } from "../../hamzad/tool-step"
 export { InlineToolRow } from "./message-parts"
 export { toolDisplay } from "./message-parts"
 
@@ -250,7 +256,7 @@ export function Session(props: {
   const showScrollbar = createMemo(() => config.session?.scrollbar ?? false)
   const markdownMode = createMemo(() => config.session?.markdown ?? "rendered")
   const diffWrapMode = createMemo(() => config.diffs?.wrap ?? "word")
-  const groupExploration = createMemo(() => config.session?.grouping !== "none")
+  const groupExploration = createMemo(() => (config.session?.grouping ?? HamzadLook.grouping) !== "none")
   const verbosity = createMemo(() => config.session?.verbosity ?? defaultVerbosity)
   // High opens exploration and instruction summaries by default; everything else starts collapsed.
   const groupExpanded = (groupID: string, kind: GroupKind) =>
@@ -1528,6 +1534,7 @@ export function Session(props: {
           paddingRight={dimensions().width < 44 ? 1 : 2}
         >
           <Show when={session()}>
+            <HamzadConversation sessionID={route.sessionID}>
             <box flexGrow={1} minHeight={0} position="relative">
               <scrollbox
                 ref={(r) => {
@@ -1563,6 +1570,7 @@ export function Session(props: {
                       row={row}
                       message={(messageID) => data.session.message.get(route.sessionID, messageID)}
                       boundaryID={boundaries()[index() + hidden()]}
+                      previous={visibleRows()[index() - 1]}
                     />
                   )}
                 </For>
@@ -1598,6 +1606,7 @@ export function Session(props: {
                 </box>
               </Show>
             </box>
+            </HamzadConversation>
             <box flexShrink={0}>
               <Show when={!composer.open && !disabled() && queuedPrompts().length > 0}>
                 <QueuedPromptDock prompts={queuedPrompts()} onOpen={openQueuedPrompts} />
@@ -1679,6 +1688,7 @@ type SessionRowViewProps = {
   row: SessionRow
   message: (messageID: string) => SessionMessageInfo | undefined
   boundaryID?: string
+  previous?: SessionRow
 }
 
 function SessionRowView(props: SessionRowViewProps) {
@@ -1688,7 +1698,12 @@ function SessionRowView(props: SessionRowViewProps) {
     node: target,
   })
   return (
-    <box ref={setTarget} id={sessionRowID(props.row, props.boundaryID)} marginTop={1} flexShrink={0}>
+    <box
+      ref={setTarget}
+      id={sessionRowID(props.row, props.boundaryID)}
+      marginTop={HamzadLook.gap(props.row, props.previous)}
+      flexShrink={0}
+    >
       <Switch>
         <Match when={props.row.type === "group" ? props.row : undefined}>
           {(row) => (
@@ -2054,6 +2069,7 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
         </Switch>
       </Show>
       <AssistantRetry retry={props.message.retry} />
+      <Show when={!HamzadLook.framed} fallback={<HamzadAnswerFooter message={props.message} />}>
       <box paddingLeft={3} marginTop={props.message.retry || (props.message.error && !interrupted()) ? 1 : 0}>
         <text>
           <span style={{ fg: props.message.error ? theme.text.muted : local.agent.color(props.message.agent) }}>
@@ -2073,6 +2089,7 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
           </Show>
         </text>
       </box>
+      </Show>
     </>
   )
 }
@@ -2390,7 +2407,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
 
   return (
     <Show when={props.message.text.trim() || files().length || skills().length}>
-      <box
+      <HamzadBar
         border={["left"]}
         borderColor={delivery() ? theme.border.base : color()}
         customBorderChars={SplitBorder.customBorderChars}
@@ -2426,14 +2443,18 @@ function UserMessage(props: { message: SessionMessageUser }) {
             const messageID = props.message.id
             dialog.replace(() => <DialogMessage messageID={messageID} sessionID={ctx.sessionID} />)
           }}
-          paddingTop={1}
-          paddingBottom={1}
-          paddingLeft={2}
-          paddingRight={2}
-          backgroundColor={hover() ? theme.decrease(theme.background.raised.base) : theme.background.raised.base}
+          paddingTop={HamzadLook.pad(1)}
+          paddingBottom={HamzadLook.pad(1)}
+          paddingLeft={HamzadLook.pad(2)}
+          paddingRight={HamzadLook.pad(2)}
+          backgroundColor={HamzadLook.flat(
+            hover() ? theme.decrease(theme.background.raised.base) : theme.background.raised.base,
+          )}
           flexShrink={0}
         >
-          <text fg={theme.text.base}>{props.message.text}</text>
+          <HamzadSpeaker who="you" muted={Boolean(delivery())}>
+            <text fg={theme.text.base}>{props.message.text}</text>
+          </HamzadSpeaker>
           <Show when={skills().length}>
             <box flexDirection="row" paddingTop={1} gap={1} flexWrap="wrap">
               <For each={skills()}>
@@ -2483,7 +2504,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
             </box>
           </Show>
         </box>
-      </box>
+      </HamzadBar>
     </Show>
   )
 }
@@ -2601,7 +2622,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool; images?: boolean }
     },
   }
 
-  const content = (
+  const content = () => (
     <Switch>
       <Match when={display() === "shell"}>
         <Shell {...toolprops} />
@@ -2651,7 +2672,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool; images?: boolean }
     </Switch>
   )
   return [
-    content,
+    HamzadLook.framed ? <HamzadToolStep part={props.part} detail={content} /> : content(),
     <Show when={props.images !== false}>
       <ToolImages parts={[props.part]} />
     </Show>,

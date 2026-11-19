@@ -16,6 +16,8 @@ import { use } from "./render-context"
 import { generateThinkingSyntax } from "./thinking-syntax"
 import { canonicalToolName } from "../../util/tool-display"
 import { useSessionLinks } from "../../ui/session-link"
+import { HamzadLook } from "../../hamzad/look"
+import { HamzadSpeaker } from "../../hamzad/speaker"
 
 export const INLINE_TOOL_ICON_WIDTH = 2
 
@@ -182,8 +184,9 @@ export function TextPart(props: {
   const plugins = usePlugin()
   return (
     <Show when={props.part.text.trim()}>
-      <box paddingLeft={3} flexShrink={0}>
+      <box paddingLeft={HamzadLook.pad(3)} flexShrink={0}>
         {/* Configure custom nodes before parsing; apply content before streaming so completion keeps the final tokens. */}
+        <HamzadSpeaker who="hamzad">
         <markdown
           ref={useSessionLinks()}
           syntaxStyle={syntax()}
@@ -196,6 +199,7 @@ export function TextPart(props: {
           fg={theme.markdown.text}
           bg={theme.background.base}
         />
+        </HamzadSpeaker>
       </box>
     </Show>
   )
@@ -221,7 +225,12 @@ export function InlineToolRow(props: {
   onMouseUp?: (event: MouseEvent) => void
 }) {
   return (
-    <box paddingLeft={3} onMouseOver={props.onMouseOver} onMouseOut={props.onMouseOut} onMouseUp={props.onMouseUp}>
+    <box
+      paddingLeft={HamzadLook.pad(3)}
+      onMouseOver={props.onMouseOver}
+      onMouseOut={props.onMouseOut}
+      onMouseUp={props.onMouseUp}
+    >
       <Switch>
         <Match when={props.spinner}>
           <Show when={props.status} fallback={<Spinner color={props.color} children={props.children} />}>
@@ -243,7 +252,7 @@ export function InlineToolRow(props: {
                 fg={props.failed ? props.errorColor : (props.iconColor ?? props.color)}
                 attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
               >
-                {props.icon}
+                {HamzadLook.framed ? "◆" : props.icon}
               </text>
               <Show
                 when={props.status}
