@@ -10,7 +10,6 @@ import {
 import {
   allThemes,
   getOpenCode2Theme,
-  defaultThemeName,
   hasTheme,
   parseTheme,
   setCustomThemes,
@@ -114,7 +113,7 @@ type ThemeContextValue = {
 const [store, setStore] = createStore<State>({
   mode: "dark",
   lock: undefined,
-  active: defaultThemeName,
+  active: "opencode",
   ready: false,
 })
 const [themeSources, setThemeSources] = createSignal(allThemes())
@@ -137,7 +136,7 @@ const themeContext = createSimpleContext({
         const mode = lock ?? renderer.themeMode ?? props.mode
         draft.mode = mode
         draft.lock = lock
-        draft.active = config.theme?.name ?? defaultThemeName
+        draft.active = config.theme?.name ?? "opencode"
         draft.ready = false
       }),
     )
@@ -164,7 +163,7 @@ const themeContext = createSimpleContext({
         .then((themes) => {
           setCustomThemes(themes)
         })
-        .catch(() => setStore("active", defaultThemeName))
+        .catch(() => setStore("active", "opencode"))
     }
 
     onMount(() => {
@@ -298,14 +297,14 @@ const themeContext = createSimpleContext({
     const initStarted = performance.now()
     const selected = createMemo(() => {
       const sources = available()
-      const name = sources[store.active] ? store.active : defaultThemeName
+      const name = sources[store.active] ? store.active : "opencode"
       try {
         return loadTheme(sources[name], name, store.mode, newDesigns())
       } catch (error) {
-        if (name === defaultThemeName) throw error
+        if (name === "opencode") throw error
         themeErrors.emit(name, error)
-        setStore("active", defaultThemeName)
-        return loadTheme(sources[defaultThemeName], defaultThemeName, store.mode, newDesigns())
+        setStore("active", "opencode")
+        return loadTheme(sources.opencode, "opencode", store.mode, newDesigns())
       }
     })
     const modes = () => selected().modes
