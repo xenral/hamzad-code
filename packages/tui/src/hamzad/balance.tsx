@@ -12,8 +12,8 @@ const FOOTER_MIN_WIDTH = 100
 const EVERY = 60_000
 
 /**
- * The credits the account has left, beside what the session has spent: in the sidebar, and under
- * the prompt on a wide terminal. To the hundredth, since a prompt on a small model costs less than
+ * The credits the account has left, beside what the session has spent: in the sidebar, under a
+ * session's prompt on a wide terminal, and on the home screen's last line. To the hundredth, since a prompt on a small model costs less than
  * a credit and a whole number would stand still. Asked again whenever a request finishes, since
  * that is when the balance moves, once a minute besides, and whenever the server learns a new
  * figure, as it does when `/usage` opens. Hidden while signed out.
@@ -66,16 +66,28 @@ export default Plugin.define({
 
     context.ui.slot({
       append: "prompt.footer.status",
-      render: () => {
+      // On the home screen the figure is on the line with the version instead.
+      render: (props) => {
         const dimensions = useTerminalDimensions()
         return (
-          <Show when={available() !== undefined && dimensions().width >= FOOTER_MIN_WIDTH}>
+          <Show when={props.sessionID && available() !== undefined && dimensions().width >= FOOTER_MIN_WIDTH}>
             <text fg={context.theme.text.muted} wrapMode="none" flexShrink={0}>
               {Brand.money.exact(available() ?? 0)} left
             </text>
           </Show>
         )
       },
+    })
+
+    context.ui.slot({
+      append: "home.footer.status",
+      render: () => (
+        <Show when={available() !== undefined}>
+          <text fg={context.theme.text.muted} wrapMode="none" flexShrink={0}>
+            {Brand.money.exact(available() ?? 0)} left
+          </text>
+        </Show>
+      ),
     })
 
     return () => stop.forEach((off) => off())

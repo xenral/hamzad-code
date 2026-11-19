@@ -4,8 +4,11 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { useTheme } from "../context/theme"
 import { tint } from "../theme/color"
 import { go, logo } from "../logo"
+import { Brand } from "@opencode/util/brand"
+import { HamzadLogo } from "../hamzad/logo"
 
 export function Logo() {
+  if (Brand.isHamzad) return <HamzadLogo />
   const theme = useTheme()
   const dimensions = useTerminalDimensions()
 
