@@ -256,6 +256,10 @@ export const Info = Schema.Struct({
   }),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable terminal mouse capture" }),
   cursor: Schema.optional(Cursor),
+  rtl: Schema.optional(Schema.Literals(["auto", "on", "off"])).annotate({
+    description:
+      "Lay out right-to-left text (Persian, Arabic, Hebrew) for terminals that draw it as written; 'auto' does so in terminals known to need it",
+  }),
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
