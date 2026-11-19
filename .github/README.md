@@ -34,6 +34,20 @@ both run side by side.
 A new version installs itself when one is out. `"update": "notify"` in the settings file only says so,
 `"update": "disable"` or `HAMZAD_DISABLE_AUTOUPDATE=1` stops the looking.
 
+Persian (and Arabic and Hebrew) reads right to left with its letters joined, also in terminals that
+draw text in the order it was written, one letter per cell: VS Code's and Cursor's, iTerm2, Ghostty,
+WezTerm, Warp, Hyper, Windows Terminal, kitty, Alacritty and xterm. The interface lays such text out
+itself there, and `hamzad run` does the same for what it writes to a terminal. Selecting and copying
+still give the text as it was written. The interface's settings file, `~/.config/hamzad/cli.json`
+(where the theme and the key bindings are), decides with `"rtl"`:
+
+| `"rtl"`          | Meaning                                                                                                                                               |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"auto"`         | The default: on in the terminals named above, off in those that lay it out themselves (Konsole, mlterm) and in any other, Apple's Terminal among them |
+| `"on"` / `"off"` | Always, or never                                                                                                                                      |
+
+`HAMZAD_RTL=on` or `HAMZAD_RTL=off` decides over the setting.
+
 ## What differs from upstream
 
 Everything that tells this build apart is in a few places, so that upstream can be merged often:
@@ -42,8 +56,9 @@ Everything that tells this build apart is in a few places, so that upstream can 
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/util/src/brand.ts`, `brand-env.ts` | Names, directories, ports, addresses, how money is written; `HAMZAD_*` variables read as `OPENCODE_*`                                                                         |
 | `packages/util/src/hamzad-status.ts`         | The states Hamzad's API can be in (not open yet, sign-in wanted, no access, out of reach) and the sentence for each, shared by the server, the command line and the interface |
+| `packages/util/src/hamzad-rtl.ts`            | Right-to-left text laid out for terminals that draw it as written: the order it is seen in, letters joined, and when to do it                                                 |
 | `packages/core/src/hamzad/`                  | Hamzad as a provider: sign-in, the model list (shown before sign-in too), the balance, what a refused sign-in says                                                            |
-| `packages/tui/src/hamzad/`                   | The credits left, in the sidebar and under the prompt; `/usage`; the sign-in dialog when a prompt is sent before signing in                                                   |
+| `packages/tui/src/hamzad/`                   | The credits left, in the sidebar and under the prompt; `/usage`; the sign-in dialog when a prompt is sent before signing in; each frame's right-to-left text laid out         |
 | `packages/cli/src/hamzad/`                   | `auth login` and `auth logout` meaning Hamzad when nothing is named; `auth list` marking the sign-in in use                                                                   |
 | `hamzad/script/brand-transform.ts`           | The product's name in every sentence a person reads, rewritten as the sources are loaded: in the build, and from source through `brand-preload.ts`                            |
 | `hamzad/script/check-brand.ts`               | The check that a built binary names upstream nowhere a person reads it                                                                                                        |
@@ -82,6 +97,7 @@ Upstream's tests assert upstream's names, so they run with `HAMZAD_BRAND=upstrea
 | `HAMZAD_API_URL`                          | Another API address, e.g. a local core                                                         |
 | `HAMZAD_UPSTREAM_PROVIDERS=1`             | Bring back upstream's hosted providers and other vendors' sign-ins                             |
 | `HAMZAD_MODELS_URL`, `HAMZAD_MODELS_PATH` | A catalog of other providers' models to load                                                   |
+| `HAMZAD_RTL=on` / `off`                   | Lay right-to-left text out, or leave it as written, whatever the `rtl` setting says            |
 | `HAMZAD_<NAME>`                           | Any upstream `OPENCODE_<NAME>` setting                                                         |
 
 ### Taking a new upstream version
