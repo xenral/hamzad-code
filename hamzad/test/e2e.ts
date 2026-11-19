@@ -403,6 +403,14 @@ try {
       }
       const shown = await screen.until(() => left(screen.text()) !== undefined)
       const before = await figure()
+      // The home screen in Hamzad's words: the line under the wordmark, the prompt, the mode.
+      const drawn = screen.redraw()
+      const own = ["your coding twin", "Tell Hamzad what to do", "Code · ", "shift+tab mode"]
+      check(
+        "the home screen speaks as Hamzad: its line, its prompt, Code as the mode",
+        await screen.until(() => own.every((word) => screen.text().slice(drawn).includes(word)), 15_000),
+        { missing: own.filter((word) => !screen.text().slice(drawn).includes(word)) },
+      )
       check(
         "the interface shows the credits left to the hundredth",
         shown && before !== undefined,
@@ -425,6 +433,12 @@ try {
         "the credits left go down when a prompt is answered, by what the gateway charged",
         Math.abs(amount(before) - amount(after) - (gateway.state.spent - charged)) < 0.011,
         { before, after, charged: gateway.state.spent - charged },
+      )
+
+      check(
+        "an answer is signed with the mode that gave it",
+        await screen.until(() => screen.text().includes("Code · Claude Sonnet"), 15_000),
+        screen.text().slice(-400),
       )
 
       const asked = gateway.requests.filter((request) => request.path === "/llm/usage/summary").length
@@ -544,6 +558,16 @@ try {
     XDG_STATE_HOME: path.join(home, "state-2"),
     HAMZAD_API_KEY: key,
   })
+  const plain = await run(["run", "--standalone", "--auto", "hello"], {
+    XDG_DATA_HOME: path.join(home, "data-2"),
+    XDG_STATE_HOME: path.join(home, "state-2"),
+    HAMZAD_API_KEY: key,
+  })
+  check(
+    "the run's own output names the mode as Code",
+    plain.code === 0 && (plain.stdout + plain.stderr).includes("> code · "),
+    (plain.stdout + plain.stderr).slice(-300),
+  )
   check(
     "HAMZAD_API_KEY alone is enough on a fresh machine",
     withKey.code === 0 && events(withKey.stdout).some((event) => event.type === "text"),
@@ -650,6 +674,18 @@ try {
       staffModels.stderr.includes("Sign in to see Hamzad's models: run `hamzad auth login`."),
     { stdout: staffModels.stdout.slice(-200), stderr: staffModels.stderr.slice(-300) },
   )
+  if (process.platform !== "win32") {
+    await interactive({ ...fresh("staff"), HAMZAD_DISABLE_AUTOUPDATE: "1" }, async (screen) => {
+      const named = await screen.until(() => screen.text().includes("Not signed in"), 30_000)
+      check(
+        "open to staff only and signed out, the prompt says it is not signed in, not to connect a provider",
+        named &&
+          screen.text().includes("hamzad auth login") &&
+          !/No provider selected|Connect a provider/.test(screen.text()),
+        screen.text().slice(-600),
+      )
+    })
+  }
   const staffRun = await run(hello, fresh("staff"))
   check(
     "open to staff only, a signed-out prompt says how to sign in",
@@ -674,7 +710,7 @@ try {
   // On a machine nobody signed in on, `/usage` says how to sign in, in Hamzad's words.
   if (process.platform !== "win32") {
     await interactive({ ...fresh("usage"), HAMZAD_DISABLE_AUTOUPDATE: "1" }, async (screen) => {
-      await screen.until(() => screen.text().includes("Ask anything"))
+      await screen.until(() => screen.text().includes("Tell Hamzad what to do"))
       const start = screen.text().length
       screen.type("/usage")
       await Bun.sleep(500)
