@@ -55,13 +55,13 @@ export const phrases: readonly Phrase[] = [
   {
     file: "packages/core/src/plugin/agent",
     from: "The default agent. Executes tools based on configured permissions.",
-    to: "Writes and changes code and runs commands, within the permissions you set.",
+    to: "Writes code and runs commands",
     whole: true,
   },
   {
     file: "packages/core/src/plugin/plan",
     from: "Read-only agent for exploring the codebase and planning work before implementation.",
-    to: "Reads the code and plans the work, and changes nothing.",
+    to: "Reads and plans, changes nothing",
     whole: true,
   },
 
