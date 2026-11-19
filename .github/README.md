@@ -4,14 +4,17 @@ A coding agent for the terminal, on your Hamzad account. You sign in once by app
 in your panel, and what you use is paid from your Hamzad credits, per token.
 
 ```bash
-curl -fsSL https://github.com/xenral/hamzad-code/releases/latest/download/install | bash
+curl -fsSL https://hamzad.ai/cli/install | bash
 hamzad auth login
 cd <project> && hamzad
 ```
 
 That is Linux, macOS, and Windows in Git Bash. The installer takes the archive for your machine from
 the newest [release](https://github.com/xenral/hamzad-code/releases) and checks it against the
-release's `SHA256SUMS` before unpacking it into `~/.hamzad/bin`.
+release's `SHA256SUMS` before unpacking it into `~/.hamzad/bin`. The same installer straight from
+this repository: `curl -fsSL https://github.com/xenral/hamzad-code/releases/latest/download/install | bash`.
+
+The guide, in Persian, is at <https://hamzad.ai/cli>.
 
 Signing in needs Hamzad's API for tools to be open for your account. Until it is, the CLI says that
 it is not available yet.
