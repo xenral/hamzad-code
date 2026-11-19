@@ -1,3 +1,5 @@
+import { defaultThemeName } from "../theme"
+import { HamzadTheme } from "../hamzad/theme"
 import { createMemo, createSignal } from "solid-js"
 import { useConfig, useNewDesigns } from "../config"
 import { useThemes } from "../context/theme"
@@ -30,7 +32,8 @@ export const settings: Setting[] = [
     category: "Appearance",
     path: ["theme", "name"],
     description: "Color theme used across the interface",
-    default: "opencode",
+    default: defaultThemeName,
+    format: (value) => HamzadTheme.title(String(value)),
     keywords: ["color scheme", "colors"],
     open: (dialog) =>
       dialog.replace(() => (

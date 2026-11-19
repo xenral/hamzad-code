@@ -47,7 +47,7 @@ describe("brand", () => {
     expect(result).toEqual(["1,200.58 cr", "1,200.00 cr", "0.04 cr", "1,234,567.50 cr"])
   })
 
-  const settings = `console.log(JSON.stringify({ policy: Brand.update.policy, config: Brand.config, client: Brand.client, host: Brand.host }))`
+  const settings = `console.log(JSON.stringify({ policy: Brand.update.policy, config: Brand.config, client: Brand.client, host: Brand.host, theme: Brand.theme, agents: Brand.agents, tagline: Brand.tagline ?? null }))`
 
   test("a new version installs itself, the config file may carry this build's name, and servers are told who asks", () => {
     const result = run(`const { Brand } = await import(${JSON.stringify(brand)}); ${settings}`)
@@ -56,6 +56,9 @@ describe("brand", () => {
       config: { names: ["hamzad.json", "hamzad.jsonc"], file: "hamzad.jsonc" },
       client: { name: "Hamzad", uri: "https://hamzad.ai" },
       host: "hamzad.ai",
+      theme: "hamzad",
+      agents: { build: "Code" },
+      tagline: "your coding twin",
     })
   })
 
@@ -73,6 +76,9 @@ describe("brand", () => {
         metadata: "https://opencode.ai/oauth/opencode/client.json",
       },
       host: "opencode.ai",
+      theme: "opencode",
+      agents: {},
+      tagline: null,
     })
   })
 

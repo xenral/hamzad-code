@@ -9,6 +9,8 @@ import { resolveThemeColors } from "./resolve"
 import { DEFAULT_THEMES, type Theme, type ThemeV1Json } from "./v1"
 import opencode from "./assets/v2/opencode.json" with { type: "json" }
 import opencode2 from "./assets/v2/opencode2.json" with { type: "json" }
+import { Brand } from "@opencode/util/brand"
+import { HamzadTheme } from "../hamzad/theme"
 
 export { DEFAULT_THEMES, type Theme, type ThemeV1Json } from "./v1"
 
@@ -30,6 +32,13 @@ export function getOpenCodeTheme() {
   return document
 }
 
+/** The theme shown when a person has chosen none, and the one fallen back to. */
+export const defaultThemeName = Brand.theme
+
+export function getDefaultTheme(): ThemeDocument {
+  return HamzadTheme.themes()[defaultThemeName] ?? getOpenCodeTheme()
+}
+
 let opencode2Theme: ThemeDocument | undefined
 
 // Temporary theme for the "new-designs" experiment. It is not part of allThemes(), so only the
@@ -44,11 +53,12 @@ function listThemes(): Record<string, ThemeDocumentSource> {
   const themes: Record<string, ThemeDocumentSource> = {
     ...DEFAULT_THEMES,
     opencode: getOpenCodeTheme(),
+    ...HamzadTheme.themes(),
     ...customThemes,
   }
   return {
     ...themes,
-    system: systemTheme ?? themes.system ?? themes.opencode,
+    system: systemTheme ?? themes.system ?? themes[defaultThemeName],
   }
 }
 
