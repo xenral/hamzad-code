@@ -139,6 +139,8 @@ async function interactive(
     text: () => string
     titles: () => string[]
     type: (keys: string) => void
+    /** Has the whole screen drawn again, and gives where in `text()` that drawing begins. */
+    redraw: () => number
     until: (seen: () => boolean, milliseconds?: number) => Promise<boolean>
   }) => Promise<void>,
   args: string[] = ["--standalone"],
@@ -154,13 +156,27 @@ async function interactive(
       rows: 45,
       data: (_terminal: unknown, data: Uint8Array) => void (written.raw += decoder.decode(data, { stream: true })),
     },
-  } as never) as unknown as { terminal: { write: (keys: string) => void }; kill: () => void; exited: Promise<number> }
+  } as never) as unknown as {
+    terminal: { write: (keys: string) => void; resize: (cols: number, rows: number) => void }
+    kill: () => void
+    exited: Promise<number>
+  }
   const text = () => written.raw.replace(escapes, "")
+  // A terminal is sent only the cells that change, so a number whose middle digit stays the same
+  // arrives in pieces and cannot be read back from what was written. A change of width has the
+  // interface draw every line whole again; what is written after it can be read as it looks.
+  const size = { cols: 140 }
   try {
     await drive({
       text,
       titles: () => [...written.raw.matchAll(/\x1b\][02];([^\x07\x1b]*)/g)].map((match) => match[1]),
       type: (keys) => child.terminal.write(keys),
+      redraw: () => {
+        const from = text().length
+        size.cols = size.cols === 140 ? 141 : 140
+        child.terminal.resize(size.cols, 45)
+        return from
+      },
       until: async (seen, milliseconds = 60_000) => {
         const end = Date.now() + milliseconds
         while (Date.now() < end) {
@@ -379,19 +395,35 @@ try {
       figure === undefined ? Number.NaN : Number(figure.replace(/,/g, ""))
     // No look for a new version here: that would be a call to Hamzad's own site, checked further down.
     await interactive({ HAMZAD_DISABLE_AUTOUPDATE: "1" }, async (screen) => {
+      // The figure as the screen shows it now, read from a fresh drawing of the whole screen.
+      const figure = async () => {
+        const from = screen.redraw()
+        await screen.until(() => left(screen.text().slice(from)) !== undefined, 15_000)
+        return left(screen.text().slice(from))
+      }
       const shown = await screen.until(() => left(screen.text()) !== undefined)
-      const before = left(screen.text())
-      check("the interface shows the credits left to the hundredth", shown, screen.text().slice(-600))
+      const before = await figure()
+      check(
+        "the interface shows the credits left to the hundredth",
+        shown && before !== undefined,
+        screen.text().slice(-600),
+      )
       const charged = gateway.state.spent
       screen.type("Say hello.")
       await Bun.sleep(500)
       screen.type("\r")
-      const moved = await screen.until(() => left(screen.text()) !== before && gateway.state.spent > charged)
-      const after = left(screen.text())
+      await screen.until(() => gateway.state.spent > charged)
+      // The figure follows the answer by one question to the gateway: looked at until it has moved.
+      const settled = { after: before }
+      for (let attempt = 0; attempt < 30 && !(amount(settled.after) < amount(before)); attempt++) {
+        await Bun.sleep(1000)
+        settled.after = await figure()
+      }
+      const after = settled.after
       console.log(`     credits left before a prompt: ${before}, after it: ${after}`)
       check(
         "the credits left go down when a prompt is answered, by what the gateway charged",
-        moved && Math.abs(amount(before) - amount(after) - (gateway.state.spent - charged)) < 0.011,
+        Math.abs(amount(before) - amount(after) - (gateway.state.spent - charged)) < 0.011,
         { before, after, charged: gateway.state.spent - charged },
       )
 
