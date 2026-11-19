@@ -16,6 +16,7 @@ import { SessionMessage } from "@opencode/schema/session-message"
 import { EOL } from "node:os"
 import { toolOutputText, type MiniToolPart } from "@opencode/tui/mini/tool"
 import { UI } from "./ui"
+import { Brand } from "@opencode/util/brand"
 
 type Input = {
   client: OpenCodeClient
@@ -496,7 +497,7 @@ function renderer(input: Input) {
       if (event.type === "session.step.started" && !steps.has(event.data.assistantMessageID)) {
         const rest = { snapshot: event.data.snapshot }
         if (!step("step-start", time, partID(event.id), event.data.assistantMessageID, rest))
-          block(`> ${event.data.agent} · ${event.data.model.id}`)
+          block(`> ${Brand.agents[event.data.agent]?.toLowerCase() ?? event.data.agent} · ${event.data.model.id}`)
         return
       }
       if (event.type === "session.step.ended") {

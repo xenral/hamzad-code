@@ -135,6 +135,7 @@ import { SessionGroupView } from "./group-view"
 import { useEntryAnchor } from "./anchor-view"
 import { containsAnchor, createTimelineAnchors, groupID } from "./anchors"
 import { rowsAfter, rowsBefore, rowWeight } from "./mount-budget"
+import { HamzadNames } from "../../hamzad/names"
 export { InlineToolRow } from "./message-parts"
 export { toolDisplay } from "./message-parts"
 
@@ -2056,7 +2057,7 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
       <box paddingLeft={3} marginTop={props.message.retry || (props.message.error && !interrupted()) ? 1 : 0}>
         <text>
           <span style={{ fg: props.message.error ? theme.text.muted : local.agent.color(props.message.agent) }}>
-            {Locale.titlecase(props.message.agent)}
+            {HamzadNames.agent(props.message.agent)}
           </span>
           <Show when={ctx.terminal.width >= 28}>
             <span style={{ fg: theme.text.muted }}> · {model()}</span>
@@ -2090,9 +2091,9 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
     )
   const text = () => {
     if (props.message.type === "agent-switched") {
-      const agent = Locale.titlecase(props.message.agent)
+      const agent = HamzadNames.agent(props.message.agent)
       if (props.message.previous && props.message.previous !== props.message.agent)
-        return `Switched agent from ${Locale.titlecase(props.message.previous)} to ${agent}`
+        return `Switched agent from ${HamzadNames.agent(props.message.previous)} to ${agent}`
       return `Switched agent to ${agent}`
     }
     if (props.message.type === "model-switched")

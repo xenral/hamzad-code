@@ -29,7 +29,6 @@ import { render } from "@opentui/solid"
 import { batch, createComponent, createSignal, type Accessor, type Setter } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { Keymap } from "../context/keymap"
-import { Locale } from "../util/locale"
 import { RUN_SUBAGENT_PANEL_ROWS, footerPanelLayout } from "./footer.command"
 import { SUBAGENT_INSPECTOR_ROWS } from "./footer.subagent"
 import { TEXTAREA_MIN_ROWS, footerPromptLayout } from "./footer.prompt"
@@ -40,6 +39,7 @@ import { resolveRunTheme, type RunTheme } from "./theme"
 import { modelInfo } from "./variant.shared"
 import { entrySplash } from "./splash"
 import { SEED_LAUNCH } from "../ui/one-cell-motion"
+import { HamzadNames } from "../hamzad/names"
 import type {
   FooterApi,
   FooterEvent,
@@ -273,9 +273,9 @@ export class RunFooter implements FooterApi {
     this.setCurrentAgentID = setCurrentAgentID
     this.currentAgent = () => {
       const agent = currentAgent()
-      if (agent) return agent.name
+      if (agent) return HamzadNames.label(agent.id, agent.name)
       const selected = selectedAgentID()
-      return selected ? Locale.titlecase(selected) : "Default"
+      return selected ? HamzadNames.agent(selected) : "Default"
     }
     const [currentModel, setCurrentModel] = createSignal<RunInput["model"]>(options.model)
     this.currentModel = currentModel

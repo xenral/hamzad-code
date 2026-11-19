@@ -28,6 +28,7 @@ import type {
   RunProvider,
 } from "./types"
 import { matchMiniVerbosity, verbosityChange, verbosityLabel } from "./verbosity"
+import { HamzadNames } from "../hamzad/names"
 
 type PanelEntry = RunFooterMenuItem & {
   category: string
@@ -642,7 +643,7 @@ export function RunAgentSelectBody(props: {
       .filter((agent) => agent.mode !== "subagent" && !agent.hidden)
       .map((agent) => ({
         category: "",
-        display: agent.id,
+        display: HamzadNames.entry(agent.id),
         description: agent.description,
         footer: props.current() === agent.id ? "current" : undefined,
         footerTone: "selection" as const,
