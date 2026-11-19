@@ -113,6 +113,22 @@ describe("a line reads right to left", () => {
     expect(HamzadRtl.text("آیا نصب است؟ [بله]")).toBe("[ﻪﻠﺑ] ؟ﺖﺳﺍ ﺐﺼﻧ ﺎﯾﺁ")
   })
 
+  test("code inside a Persian sentence stays one left-to-right run, its brackets as written", () => {
+    expect(HamzadRtl.text("این تابع foo(bar) رو درست کن")).toBe("ﻦﮐ ﺖﺳﺭﺩ ﻭﺭ foo(bar) ﻊﺑﺎﺗ ﻦﯾﺍ")
+    expect(HamzadRtl.text("فایل src/app.ts رو باز کن")).toBe("ﻦﮐ ﺯﺎﺑ ﻭﺭ src/app.ts ﻞﯾﺎﻓ")
+    expect(HamzadRtl.text('از {"a":1} استفاده کن')).toBe('ﻦﮐ ﻩﺩﺎﻔﺘﺳﺍ {"a":1} ﺯﺍ')
+    expect(HamzadRtl.text("تابع foo() را صدا بزن")).toBe("ﻥﺰﺑ ﺍﺪﺻ ﺍﺭ foo() ﻊﺑﺎﺗ")
+    expect(HamzadRtl.text('این را اجرا کن [[tool:bash {"command":"sh fa.sh","description":"Persian"}]]')).toBe(
+      '[[tool:bash {"command":"sh fa.sh","description":"Persian"}]] ﻦﮐ ﺍﺮﺟﺍ ﺍﺭ ﻦﯾﺍ',
+    )
+  })
+
+  test("a Persian aside in brackets is mirrored with the sentence around it", () => {
+    expect(HamzadRtl.text("همزاد (دستیار کد) کمک می‌کند.")).toBe(".ﺪﻨﮐﯽﻣ ﮏﻤﮐ (ﺪﮐ ﺭﺎﯿﺘﺳﺩ) ﺩﺍﺰﻤﻫ")
+    // a bracket left without its pair is mirrored where it stands
+    expect(HamzadRtl.text("سلام (دنیا")).toBe("ﺎﯿﻧﺩ) ﻡﺎﻠﺳ")
+  })
+
   test("a quote marker before Persian stays where it is", () => {
     expect(HamzadRtl.text("> همزاد کنار کدت می‌نشیند.")).toBe("> .ﺪﻨﯿﺸﻧﯽﻣ ﺕﺪﮐ ﺭﺎﻨﮐ ﺩﺍﺰﻤﻫ")
   })

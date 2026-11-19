@@ -109,6 +109,40 @@ const border = (text: string) => {
 
 const blank = (text: string) => text === " " || text === ""
 
+// The brackets that pair up (BD16): ( ) [ ] { } and the guillemets « », opening to closing.
+const brackets = new Map<number, number>([
+  [0x28, 0x29],
+  [0x5b, 0x5d],
+  [0x7b, 0x7d],
+  [0xab, 0xbb],
+])
+const closers = new Map([...brackets].map(([open, close]) => [close, open]))
+
+/** The bracket pairs among neutral glyphs, as indices from `from`, ordered by their opening bracket. */
+function pairs(glyphs: readonly Glyph[], from: number, types: readonly Kind[]) {
+  const open: { close: number; at: number }[] = []
+  const found: [number, number][] = []
+  for (let i = 0; i < types.length; i++) {
+    if (types[i] !== ON) continue
+    const cp = glyphs[from + i].text.codePointAt(0)!
+    const close = brackets.get(cp)
+    if (close !== undefined) {
+      // As the algorithm does, a line with brackets nested deeper than 63 pairs no further.
+      if (open.length === 63) break
+      open.push({ close, at: i })
+      continue
+    }
+    if (!closers.has(cp)) continue
+    for (let k = open.length - 1; k >= 0; k--) {
+      if (open[k].close !== cp) continue
+      found.push([open[k].at, i])
+      open.length = k
+      break
+    }
+  }
+  return found.sort((a, b) => a[0] - b[0])
+}
+
 // Brackets and quotation marks drawn mirrored inside right-to-left text.
 const mirrors = new Map<number, number>(
   [
@@ -272,8 +306,27 @@ function levels(glyphs: readonly Glyph[], from: number, to: number) {
     for (let j = i; j < end; j++) types[j] = number ? EN : ON
     i = end - 1
   }
-  // W6, N1, N2: what is left takes the direction on both sides of it, or else the part's own.
   const direction = (type: Kind) => (type === L ? L : type === R || type === EN || type === AN ? R : undefined)
+  // BD16, N0: brackets that pair up take one direction: right-to-left when there is right-to-left
+  // text or a number inside, left-to-right when there is only left-to-right text inside, else that
+  // of the text before them. So `foo(bar)` or `{"a":1}` stays one left-to-right run with its
+  // brackets as written, and only brackets at the right-to-left level are mirrored.
+  for (const [open, close] of pairs(glyphs, from, types)) {
+    let inside: Kind | undefined
+    for (let j = open + 1; j < close && inside !== R; j++) inside = direction(types[j]) ?? inside
+    if (inside === undefined) {
+      inside = R
+      for (let j = open - 1; j >= 0; j--) {
+        const before = direction(types[j])
+        if (before === undefined) continue
+        inside = before
+        break
+      }
+    }
+    types[open] = inside
+    types[close] = inside
+  }
+  // W6, N1, N2: what is left takes the direction on both sides of it, or else the part's own.
   const level = new Array<number>(count)
   for (let i = 0; i < count; i++) {
     const own = direction(types[i])
@@ -354,8 +407,7 @@ export function layout(glyphs: readonly Glyph[], cursor?: number): Layout | unde
     // only the Persian words between them turn.
     const paragraph = leading !== L
     let from = first
-    if (paragraph)
-      while (from > segment.from && !blank(glyphs[from - 1].text) && neutral(kinds[from - 1])) from--
+    if (paragraph) while (from > segment.from && !blank(glyphs[from - 1].text) && neutral(kinds[from - 1])) from--
     let to = paragraph ? content : last
     // While typing, the spaces just typed after the words belong to them, though a field's empty
     // cells after them would make them a gap.
