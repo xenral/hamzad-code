@@ -1,3 +1,4 @@
+import { empty as HamzadNoModel } from "../hamzad/status"
 import { createStore } from "solid-js/store"
 import { dedupeWith } from "effect/Array"
 import { createSimpleContext } from "./helper"
@@ -398,11 +399,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         parsed: createMemo(() => {
           const value = currentSelection()
           if (!value) {
-            return {
-              provider: "Connect a provider",
-              model: "No provider selected",
-              reasoning: false,
-            }
+            return (
+              HamzadNoModel() ?? {
+                provider: "Connect a provider",
+                model: "No provider selected",
+                reasoning: false,
+              }
+            )
           }
           const provider = providers()?.find((item) => item.id === value.providerID)
           const info = models()?.find((item) => item.providerID === value.providerID && item.id === value.modelID)

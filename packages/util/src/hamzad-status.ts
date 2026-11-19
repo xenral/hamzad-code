@@ -41,6 +41,27 @@ export function reason(state: State) {
   }
 }
 
+/**
+ * Where the prompt names its model and provider, the two words to show when there is no model,
+ * for the same reasons: what is wrong, and what to do about it.
+ */
+export function labels(state: State) {
+  switch (state) {
+    case "listed":
+      return { model: "No model selected", provider: "/models" }
+    case "sign-in":
+      return { model: "Not signed in", provider: `${Brand.cli} auth login` }
+    case "refused":
+      return { model: "Sign-in not accepted", provider: `${Brand.cli} auth login` }
+    case "no-access":
+      return { model: "No access yet", provider: Brand.name }
+    case "unavailable":
+      return { model: "Not available yet", provider: Brand.name }
+    case "unreachable":
+      return { model: `${Brand.name} not reachable`, provider: "check your connection" }
+  }
+}
+
 /** One line for a prompt that has no model to go to, for the same reasons. */
 export const prompt = (state: State) => (state === "sign-in" ? signedOut : reason(state))
 
