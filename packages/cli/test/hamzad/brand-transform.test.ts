@@ -3,7 +3,8 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { Brand } from "@opencode/util/brand"
-import { source, words } from "../../../../hamzad/script/brand-transform"
+import { phrases } from "../../../../hamzad/script/brand-phrases"
+import { brandPlugin, source, words } from "../../../../hamzad/script/brand-transform"
 
 const sentence = (text: string) => words(text, true)
 const word = (text: string) => words(text, false)
@@ -183,4 +184,45 @@ describe.skipIf(!Brand.isHamzad)("the check of a built program", () => {
     expect(command.code).toBe(1)
     expect(command.stderr).toContain("run opencode upgrade")
   })
+})
+
+describe.skipIf(!Brand.isHamzad)("the sentences this build words its own way", () => {
+  const root = path.join(import.meta.dir, "../../../..")
+  type Load = (args: { path: string }) => Promise<{ contents?: string } | undefined>
+  const handlers = (plugin: { setup: (build: never) => unknown }) => {
+    const found: { filter: RegExp; load: Load }[] = []
+    plugin.setup({
+      onLoad: (constraints: { filter: RegExp }, load: Load) => void found.push({ filter: constraints.filter, load }),
+      onResolve: () => undefined,
+    } as never)
+    return found
+  }
+  const solid = async () =>
+    (
+      await import(Bun.resolveSync("@opentui/solid/bun-plugin", path.join(root, "packages/tui")))
+    ).createSolidTransformPlugin()
+  // The file as the program loads it, and as it would without this build's words: a component goes
+  // through the JSX compiler first, as in the build.
+  const load = async (file: string) => {
+    const reworded = (await handlers(brandPlugin({ solid: await solid(), always: true }))[0]!.load({ path: file }))
+      ?.contents
+    const component = handlers(await solid()).find((item) => /\.tsx$/.test(file) && item.filter.test(file))
+    const plain = component ? (await component.load({ path: file }))?.contents : await Bun.file(file).text()
+    return { reworded: reworded ?? "", plain: plain ?? "" }
+  }
+  const count = (text: string, part: string) => text.split(part).length - 1
+
+  for (const phrase of phrases) {
+    test(`${phrase.file}: "${phrase.from}"`, async () => {
+      const file = ["tsx", "ts"]
+        .map((extension) => path.join(root, `${phrase.file}.${extension}`))
+        .find((candidate) => Bun.file(candidate).size > 0)
+      expect(file, "the file is still there").toBeDefined()
+      const original = await Bun.file(file!).text()
+      // Upstream still says it: a merge that reworded it must reword this entry too.
+      expect(original).toContain(phrase.from)
+      const loaded = await load(file!)
+      expect(count(loaded.reworded, phrase.to)).toBeGreaterThan(count(loaded.plain, phrase.to))
+    })
+  }
 })

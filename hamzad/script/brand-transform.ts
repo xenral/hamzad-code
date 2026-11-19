@@ -11,6 +11,7 @@
 
 import type { BunPlugin } from "bun"
 import { Brand } from "../../packages/util/src/brand"
+import { phrases, type Phrase } from "./brand-phrases"
 
 // What is rewritten, most specific first. Each rule says what it must not touch.
 
@@ -75,11 +76,29 @@ const candidate =
 /** Whether a source file may hold text to rewrite. */
 export const mentions = (code: string) => candidate.test(code)
 
+const fileKey = (file: string) => file.replaceAll("\\", "/").replace(/\.[cm]?[jt]sx?$/, "")
+
+/** The sentences this build words its own way in a file (see brand-phrases.ts). */
+export const phrasesFor = (file: string): readonly Phrase[] => {
+  if (!Brand.isHamzad) return []
+  const key = fileKey(file)
+  return phrases.filter((phrase) => key.endsWith(phrase.file))
+}
+
+/** A piece of text as written in the source (`raw`) and as it reads (`text`), reworded. */
+function rephrase(raw: string, text: string, list: readonly Phrase[]) {
+  return list.reduce((result, phrase) => {
+    if (!phrase.whole) return result.replaceAll(phrase.from, phrase.to)
+    return text.trim() === phrase.from ? result.replace(phrase.from, phrase.to) : result
+  }, raw)
+}
+
 const space = /\s/
 
 /** A TypeScript or JavaScript source with the name rewritten inside its text, and nowhere else. */
 export async function source(code: string, file: string) {
-  if (!mentions(code)) return code
+  const list = phrasesFor(file)
+  if (!mentions(code) && list.length === 0) return code
   const { default: ts } = await import("typescript")
   const kind = /\.[cm]?[jt]sx$/.test(file)
     ? ts.ScriptKind.TSX
@@ -88,10 +107,10 @@ export async function source(code: string, file: string) {
       : ts.ScriptKind.TS
   const parsed = ts.createSourceFile(file, code, ts.ScriptTarget.Latest, false, kind)
   const edits: { start: number; end: number; text: string }[] = []
-  const edit = (node: { getStart: (file: typeof parsed) => number; end: number }, sentence: boolean) => {
+  const edit = (node: { getStart: (file: typeof parsed) => number; end: number; text: string }, sentence: boolean) => {
     const start = node.getStart(parsed)
     const before = code.slice(start, node.end)
-    const after = words(before, sentence)
+    const after = words(rephrase(before, node.text, list), sentence)
     if (after !== before) edits.push({ start, end: node.end, text: after })
   }
   const visit = (node: import("typescript").Node): void => {
@@ -171,7 +190,7 @@ export function brandPlugin(
             loader: "js",
           }
         const code = await Bun.file(args.path).text()
-        if (!options.always && !mentions(code)) return undefined
+        if (!options.always && !mentions(code) && phrasesFor(args.path).length === 0) return undefined
         return { contents: await source(code, args.path), loader: loader(args.path) }
       })
     },
