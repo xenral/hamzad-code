@@ -26,8 +26,13 @@ Hamzad CLI is built on [OpenCode](https://github.com/anomalyco/opencode), MIT Li
 way. Please report problems to Hamzad, not to the OpenCode project.
 
 Project files stay compatible: `opencode.json`, `.opencode/` and `AGENTS.md` in a repository are read
-as OpenCode reads them. Hamzad's own files live apart from a stock OpenCode install (`~/.config/hamzad`,
-`~/.local/share/hamzad`, `~/.hamzad`), so both run side by side.
+as OpenCode reads them. The settings file may also be named `hamzad.json` or `hamzad.jsonc`, which is
+the name a new one is written under; where both are there, Hamzad's is read last. Hamzad's own files
+live apart from a stock OpenCode install (`~/.config/hamzad`, `~/.local/share/hamzad`, `~/.hamzad`), so
+both run side by side.
+
+A new version installs itself when one is out. `"update": "notify"` in the settings file only says so,
+`"update": "disable"` or `HAMZAD_DISABLE_AUTOUPDATE=1` stops the looking.
 
 ## What differs from upstream
 
@@ -38,8 +43,10 @@ Everything that tells this build apart is in a few places, so that upstream can 
 | `packages/util/src/brand.ts`, `brand-env.ts` | Names, directories, ports, addresses, how money is written; `HAMZAD_*` variables read as `OPENCODE_*`                                                                         |
 | `packages/util/src/hamzad-status.ts`         | The states Hamzad's API can be in (not open yet, sign-in wanted, no access, out of reach) and the sentence for each, shared by the server, the command line and the interface |
 | `packages/core/src/hamzad/`                  | Hamzad as a provider: sign-in, the model list (shown before sign-in too), the balance, what a refused sign-in says                                                            |
-| `packages/tui/src/hamzad/`                   | The credits left, in the sidebar and under the prompt; the sign-in dialog when a prompt is sent before signing in                                                             |
+| `packages/tui/src/hamzad/`                   | The credits left, in the sidebar and under the prompt; `/usage`; the sign-in dialog when a prompt is sent before signing in                                                   |
 | `packages/cli/src/hamzad/`                   | `auth login` and `auth logout` meaning Hamzad when nothing is named; `auth list` marking the sign-in in use                                                                   |
+| `hamzad/script/brand-transform.ts`           | The product's name in every sentence a person reads, rewritten as the sources are loaded: in the build, and from source through `brand-preload.ts`                            |
+| `hamzad/script/check-brand.ts`               | The check that a built binary names upstream nowhere a person reads it                                                                                                        |
 | `hamzad/`                                    | The installer, the packing script, the stand-in gateway and the end-to-end check                                                                                              |
 | `.github/workflows/hamzad-*.yml`             | The checks, the release, and the weekly try at merging upstream                                                                                                               |
 | `.github/upstream-workflows/`                | Upstream's own workflows, parked where GitHub does not run them                                                                                                               |
@@ -47,6 +54,12 @@ Everything that tells this build apart is in a few places, so that upstream can 
 Upstream's own files are edited only to read a value from the brand module or to call into one of the
 folders above. `git diff <upstream commit> -- . ':!hamzad' ':!packages/*/src/hamzad' ':!packages/*/test/hamzad'`
 shows all of it.
+
+Upstream's sentences are not edited at all. It names itself in several hundred of them, across some
+140 files, and the transform rewrites that name where it is text (a string, a template, the words of
+a component, a prompt file) and leaves it where another program reads it: identifiers, package and
+plugin ids, headers, paths, hosts, and the names of upstream's own hosted services, which this build
+does not offer. `HAMZAD_BRAND=upstream` switches it off.
 
 ## Working on it
 
@@ -56,6 +69,8 @@ bun run dev                                    # the CLI from source
 bun hamzad/test/mock-gateway.ts                # a stand-in for Hamzad's API on :8787
 HAMZAD_API_URL=http://127.0.0.1:8787/api/v1 bun run dev
 bun hamzad/test/e2e.ts                         # sign in, prompt, tool call, credits, no outside host
+bun hamzad/test/e2e.ts --bin <binary>          # the same for a built binary, with updating and the name check
+bun hamzad/script/check-brand.ts <binary>      # where a binary still holds upstream's name, by kind
 ```
 
 Upstream's tests assert upstream's names, so they run with `HAMZAD_BRAND=upstream`; the tests under
@@ -80,8 +95,11 @@ git merge v2.3.N^
 ```
 
 Then run the checks above, both test profiles, and the end-to-end check, which fails when a merge
-brings in a new outside host. A workflow upstream added arrives in `.github/workflows/`: move it to
-`.github/upstream-workflows/` in the merge commit, or the check fails.
+brings in a new outside host, a command whose help names upstream, or a sentence in the binary that
+the transform's rules do not reach. `check-brand.ts --show <kind>` lists what it counted under a kind;
+a new sentence is fixed by a rule in `brand-transform.ts`, never by editing upstream's file. A workflow
+upstream added arrives in `.github/workflows/`: move it to `.github/upstream-workflows/` in the merge
+commit, or the check fails.
 
 ### Releasing
 
