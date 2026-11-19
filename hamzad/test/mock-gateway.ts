@@ -95,7 +95,10 @@ export const models = [
 ]
 
 // The gateway's own codes, statuses and wording. The numbers beside a code sit flat under `error`.
-const refusals: Record<string, { status: number; type: string; message: string; extra?: Record<string, unknown> }> = {
+const refusals: Record<
+  string,
+  { status: number; type: string; message: string; extra?: Record<string, unknown>; headers?: Record<string, string> }
+> = {
   invalid_api_key: {
     status: 401,
     type: "authentication_error",
@@ -136,7 +139,18 @@ const refusals: Record<string, { status: number; type: string; message: string; 
     message: "This request is longer than the model's context window. Shorten the conversation.",
   },
   rate_limit_exceeded: { status: 429, type: "rate_limit_error", message: "Too many requests. Try again shortly." },
-  upstream_unavailable: { status: 503, type: "server_error", message: "The model is not reachable right now." },
+  upstream_unavailable: {
+    status: 503,
+    type: "server_error",
+    message: "The model could not be reached. Try again, or choose another model.",
+  },
+  // The model's provider turned the gateway itself away: asking again at once is no use, and the gateway says so.
+  model_unavailable: {
+    status: 503,
+    type: "server_error",
+    message: "This model is not available right now. Choose another model.",
+    headers: { "x-should-retry": "false" },
+  },
   not_found: { status: 404, type: "invalid_request_error", message: "Not found." },
 }
 
@@ -210,7 +224,10 @@ export function start(
       {
         error: { message: refusal.message, message_fa: null, type: refusal.type, code, param: null, ...refusal.extra },
       },
-      { status: refusal.status, headers: refusal.status === 429 ? { "retry-after": "1" } : {} },
+      {
+        status: refusal.status,
+        headers: { ...(refusal.status === 429 ? { "retry-after": "1" } : {}), ...refusal.headers },
+      },
     )
   }
   const server = Bun.serve({

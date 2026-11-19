@@ -307,6 +307,20 @@ try {
     (refused.stdout + refused.stderr).slice(-500),
   )
 
+  const beforeGone = gateway.requests.length
+  const gone = await run(["run", "--standalone", "--auto", "--format", "json", "[[refuse:model_unavailable]] hello"])
+  check(
+    "a model its provider will not serve is said once, and not asked for again",
+    gone.code !== 0 &&
+      (gone.stdout + gone.stderr).includes("This model is not available right now. Choose another model.") &&
+      gateway.requests.slice(beforeGone).filter((request) => request.body?.tools.length).length === 1,
+    {
+      code: gone.code,
+      requests: gateway.requests.slice(beforeGone).map((request) => request.path),
+      output: (gone.stdout + gone.stderr).slice(-400),
+    },
+  )
+
   const before = gateway.requests.length
   const capped = await run(["run", "--standalone", "--auto", "--format", "json", "[[refuse:daily_spend_limit]] hello"])
   check(
