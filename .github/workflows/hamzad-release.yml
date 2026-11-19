@@ -8,7 +8,7 @@ name: hamzad-release
 #   sign      the macOS binaries get an ad-hoc signature, which Apple Silicon requires to run them
 #   pack      archives with ripgrep inside, checksums, latest.json, the installer and the mirrors
 #   smoke     each platform installs its archive and runs the end-to-end check against the stand-in gateway
-#   release   a GitHub Release with everything, for a tag
+#   release   a GitHub Release with everything, for a tag; hamzad/notes/<version>.md, when there, opens its notes
 #   publish   uploads the same files to where hamzad.ai/cli is served from, when the secrets for it exist
 #
 # A rehearsal: push a branch `hamzad-try/<version>`. Everything up to the smoke runs, on every
@@ -212,6 +212,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # What is new in a version, when someone wrote it down: hamzad/notes/<version>.md.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          sparse-checkout: /hamzad/notes/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: site
@@ -219,16 +225,20 @@ jobs:
       - name: Publish the GitHub Release
         run: |
           cp site/latest.json site/install "site/v/$VERSION/"
-          releases="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases"
-          cat > notes.md <<EOF
-          A coding agent for the terminal, on your Hamzad account: what you use is paid from your Hamzad credits, per token. Built on OpenCode ${VERSION%%-hamzad.*}.
+          : > notes.md
+          if [ -f "hamzad/notes/$VERSION.md" ]; then
+            cat "hamzad/notes/$VERSION.md" >> notes.md
+            echo >> notes.md
+          fi
+          cat >> notes.md <<EOF
+          A coding agent for the terminal, on your Hamzad account: what you use is paid from your Hamzad credits, per token.
 
           ## Install
 
           Linux, macOS, and Windows in Git Bash:
 
           \`\`\`bash
-          curl -fsSL $releases/latest/download/install | bash
+          curl -fsSL https://hamzad.ai/cli/install | bash
           hamzad auth login
           \`\`\`
 
