@@ -10,6 +10,7 @@
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
+import { Brand } from "../../packages/util/src/brand"
 import { key, panelKey, start } from "./mock-gateway"
 
 const root = path.join(import.meta.dir, "../..")
@@ -108,6 +109,73 @@ async function run(args: string[], env: Record<string, string> = {}) {
   return { stdout, stderr, code }
 }
 
+// Every command's help, found by following the subcommands each screen lists. A few at a time:
+// from source each one is a whole start of the program.
+const turns = { free: 4, waiting: [] as (() => void)[] }
+async function limited<A>(work: () => Promise<A>) {
+  if (turns.free === 0) await new Promise<void>((resolve) => turns.waiting.push(resolve))
+  else turns.free--
+  return work().finally(() => {
+    const next = turns.waiting.shift()
+    if (next) next()
+    else turns.free++
+  })
+}
+async function helps(command: string[] = []): Promise<{ command: string; code: number; stdout: string }[]> {
+  const screen = await limited(() => run([...command, "--help"]))
+  const listed = /^SUBCOMMANDS\r?\n((?: .*\r?\n?)*)/m.exec(screen.stdout)?.[1] ?? ""
+  const below = await Promise.all(
+    [...listed.matchAll(/^ {2}([a-z][\w-]*)/gm)].map((match) => helps([...command, match[1]])),
+  )
+  return [{ command: command.join(" "), code: screen.code, stdout: screen.stdout }, ...below.flat()]
+}
+
+// The interface in a pseudo-terminal: what it has written so far with the escape sequences taken
+// out, the titles it gave the window, and a way to type into it.
+const escapes = /\x1b\[[0-9;?<>=]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>]/g
+async function interactive(
+  env: Record<string, string>,
+  drive: (screen: {
+    text: () => string
+    titles: () => string[]
+    type: (keys: string) => void
+    until: (seen: () => boolean, milliseconds?: number) => Promise<boolean>
+  }) => Promise<void>,
+  args: string[] = ["--standalone"],
+) {
+  const written = { raw: "" }
+  const decoder = new TextDecoder()
+  const child = Bun.spawn({
+    cmd: [...cli, ...args],
+    cwd: project,
+    env: { ...environment, TERM: "xterm-256color", NO_COLOR: undefined, ...env },
+    terminal: {
+      cols: 140,
+      rows: 45,
+      data: (_terminal: unknown, data: Uint8Array) => void (written.raw += decoder.decode(data, { stream: true })),
+    },
+  } as never) as unknown as { terminal: { write: (keys: string) => void }; kill: () => void; exited: Promise<number> }
+  const text = () => written.raw.replace(escapes, "")
+  try {
+    await drive({
+      text,
+      titles: () => [...written.raw.matchAll(/\x1b\][02];([^\x07\x1b]*)/g)].map((match) => match[1]),
+      type: (keys) => child.terminal.write(keys),
+      until: async (seen, milliseconds = 60_000) => {
+        const end = Date.now() + milliseconds
+        while (Date.now() < end) {
+          if (seen()) return true
+          await Bun.sleep(200)
+        }
+        return seen()
+      },
+    })
+  } finally {
+    child.kill()
+    await child.exited
+  }
+}
+
 type Event = {
   type: string
   part?: {
@@ -129,18 +197,28 @@ try {
   const version = await run(["--version"])
   check("the command answers to its own name", version.code === 0 && /^hamzad /.test(version.stdout.trim()), version)
 
-  // The help a person reads first names this program, not the one it is built on.
-  const help = await Promise.all(
-    [["--help"], ["auth", "--help"], ["run", "--help"], ["models", "--help"], ["upgrade", "--help"]].map((args) =>
-      run(args),
-    ),
-  )
+  // The help of every command names this program, not the one it is built on.
+  const help = await helps()
   check(
-    "the top-level help texts say Hamzad and never OpenCode",
-    help.every((screen) => screen.code === 0 && !/opencode/i.test(screen.stdout)) &&
+    "every command's help says Hamzad and never OpenCode",
+    help.length > 40 &&
+      help.every((screen) => screen.code === 0 && !/opencode/i.test(screen.stdout)) &&
       help[0].stdout.includes("Directory to start Hamzad in") &&
-      help[0].stdout.includes("Run Hamzad with a message"),
-    help.map((screen) => screen.stdout.match(/.*opencode.*/gi)),
+      help[0].stdout.includes("Run Hamzad with a message") &&
+      help.some((screen) => screen.command === "upgrade" && screen.stdout.includes("Upgrade Hamzad")),
+    {
+      commands: help.length,
+      failed: help.filter((screen) => screen.code !== 0).map((screen) => screen.command),
+      named: help.flatMap((screen) => screen.stdout.match(/.*opencode.*/gi) ?? []).slice(0, 12),
+    },
+  )
+  const completions = await Promise.all(["bash", "zsh", "fish"].map((shell) => run(["--completions", shell])))
+  check(
+    "the shell completions name only this command",
+    completions.every(
+      (script) => script.code === 0 && script.stdout.includes("hamzad") && !/opencode/i.test(script.stdout),
+    ),
+    completions.map((script) => script.stdout.match(/.*opencode.*/gi)?.slice(0, 3)),
   )
 
   // A first run, before any sign-in: the models and their prices are there to see.
@@ -291,6 +369,72 @@ try {
       ) && events(search.stdout).some((event) => event.type === "text" && event.part?.text?.includes("NOTES.txt")),
       { code: search.code, stderr: search.stderr.slice(-400) },
     )
+  }
+
+  // The interface itself: the credits left move when a prompt is answered, and `/usage` is Hamzad's.
+  // A pseudo-terminal is needed, which Windows does not give a child process this way.
+  if (process.platform !== "win32") {
+    const left = (text: string) => [...text.matchAll(/([\d,]+\.\d\d) cr left/g)].at(-1)?.[1]
+    const amount = (figure: string | undefined) =>
+      figure === undefined ? Number.NaN : Number(figure.replace(/,/g, ""))
+    // No look for a new version here: that would be a call to Hamzad's own site, checked further down.
+    await interactive({ HAMZAD_DISABLE_AUTOUPDATE: "1" }, async (screen) => {
+      const shown = await screen.until(() => left(screen.text()) !== undefined)
+      const before = left(screen.text())
+      check("the interface shows the credits left to the hundredth", shown, screen.text().slice(-600))
+      const charged = gateway.state.spent
+      screen.type("Say hello.")
+      await Bun.sleep(500)
+      screen.type("\r")
+      const moved = await screen.until(() => left(screen.text()) !== before && gateway.state.spent > charged)
+      const after = left(screen.text())
+      console.log(`     credits left before a prompt: ${before}, after it: ${after}`)
+      check(
+        "the credits left go down when a prompt is answered, by what the gateway charged",
+        moved && Math.abs(amount(before) - amount(after) - (gateway.state.spent - charged)) < 0.011,
+        { before, after, charged: gateway.state.spent - charged },
+      )
+
+      const asked = gateway.requests.filter((request) => request.path === "/llm/usage/summary").length
+      const start = screen.text().length
+      screen.type("/usage")
+      await Bun.sleep(500)
+      screen.type("\r")
+      const opened = await screen.until(() => screen.text().slice(start).includes("Add credits:"), 30_000)
+      const dialog = screen.text().slice(start)
+      check(
+        "`/usage` shows the credits left, today, the last 30 days, each model, and where to add credits",
+        opened &&
+          [
+            "cr left",
+            "Today",
+            "Last 30 days",
+            "Requests",
+            "Tokens in",
+            "Claude Sonnet",
+            Brand.billing,
+            Brand.settings,
+          ].every((word) => dialog.includes(word)) &&
+          !/console|workspace|\/connect/i.test(dialog),
+        dialog.slice(-900),
+      )
+      check(
+        "opening `/usage` asks the gateway anew",
+        gateway.requests.filter((request) => request.path === "/llm/usage/summary").length > asked,
+      )
+      check(
+        "the interface and the window's title never say OpenCode",
+        !/opencode/i.test(screen.text()) && screen.titles().every((title) => !/opencode/i.test(title)),
+        {
+          text: screen
+            .text()
+            .match(/.{0,40}opencode.{0,40}/gi)
+            ?.slice(0, 5),
+          titles: [...new Set(screen.titles())],
+        },
+      )
+      console.log(`     window titles: ${JSON.stringify([...new Set(screen.titles())])}`)
+    })
   }
 
   const refused = await run([
@@ -494,6 +638,140 @@ try {
     { code: tooMany.code, output: output(tooMany).slice(-300) },
   )
   gateway.state.attempts = false
+
+  // On a machine nobody signed in on, `/usage` says how to sign in, in Hamzad's words.
+  if (process.platform !== "win32") {
+    await interactive({ ...fresh("usage"), HAMZAD_DISABLE_AUTOUPDATE: "1" }, async (screen) => {
+      await screen.until(() => screen.text().includes("Ask anything"))
+      const start = screen.text().length
+      screen.type("/usage")
+      await Bun.sleep(500)
+      screen.type("\r")
+      // The sentence takes the place of "Loading…" on screen, and a terminal is sent only the cells
+      // that change, so its first letters may not be written again: the rest of it is looked for.
+      const sentence = "are not signed in to Hamzad. Run `hamzad auth login`"
+      const said = await screen.until(() => screen.text().slice(start).includes(sentence), 30_000)
+      check(
+        "signed out, `/usage` says how to sign in to Hamzad",
+        said && !/console|workspace|\/connect|opencode/i.test(screen.text().slice(start)),
+        screen.text().slice(start).slice(-500),
+      )
+    })
+  }
+
+  // A project may keep its settings under this build's name: a model given there is the one used.
+  if (bin) {
+    await fs.writeFile(path.join(project, "hamzad.json"), JSON.stringify({ model: "hamzad/deepseek" }))
+    const beforeNamed = gateway.requests.length
+    await run(hello, second)
+    await fs.rm(path.join(project, "hamzad.json"))
+    check(
+      "a project's `hamzad.json` is read",
+      gateway.requests
+        .slice(beforeNamed)
+        .some((request) => request.body?.tools.length && request.body.model === "deepseek"),
+      gateway.requests.slice(beforeNamed).map((request) => request.body?.model),
+    )
+  }
+
+  // Updating, with a binary: where a new version is looked for, and what is said about it. No
+  // archive is served, so nothing can be installed; what is asked for and what is said are checked.
+  if (bin && process.platform !== "win32") {
+    const current = version.stdout.trim().replace(/^hamzad v?/, "")
+    const release = { version: "99.9.9" }
+    const fetched: string[] = []
+    const site = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        const pathname = new URL(request.url).pathname
+        fetched.push(pathname)
+        return pathname.endsWith(".json")
+          ? Response.json({ version: release.version, metadata: { package: `${Brand.scope}/cli` } })
+          : new Response("Not found", { status: 404 })
+      },
+    })
+    const from = { HAMZAD_CLI_URL: `http://127.0.0.1:${site.port}`, HAMZAD_CLI_RELEASES: "" }
+    try {
+      const newer = await run(["upgrade", "--method", "curl"], from)
+      check(
+        "`upgrade` names the newer version, in Hamzad's words, and asks Hamzad's address for the installer",
+        output(newer).includes(`From ${current} → 99.9.9`) &&
+          !/opencode/i.test(output(newer)) &&
+          fetched.some((item) => item.endsWith(".json")) &&
+          fetched.includes("/install"),
+        { output: output(newer).slice(-500), fetched },
+      )
+      release.version = current
+      const same = await run(["upgrade", "--method", "curl"], from)
+      check(
+        "`upgrade` says so when the newest version is the one installed",
+        output(same).includes(`Hamzad upgrade skipped: ${current} is already installed`),
+        output(same).slice(-300),
+      )
+
+      // A copy the installer put in place updates itself when a new version is out, unless told not to.
+      release.version = "99.9.9"
+      const installed = path.join(home, Brand.dot, "bin", path.basename(bin))
+      await fs.mkdir(path.dirname(installed), { recursive: true })
+      await fs.link(bin, installed).catch(() => fs.copyFile(bin, installed))
+      const settings = path.join(home, "config", "hamzad", "hamzad.json")
+      // The interface is opened and left alone until `settled` holds, or for as long as given;
+      // then for a moment more, in which the installer would be asked for if it were going to be.
+      const looked = () => fetched.some((item) => item.endsWith(".json"))
+      const starts = async (env: Record<string, string>, settled: () => boolean, milliseconds = 30_000) => {
+        fetched.length = 0
+        const child = Bun.spawn({
+          cmd: [installed, "--standalone"],
+          cwd: project,
+          env: { ...environment, TERM: "xterm-256color", ...from, ...env },
+          terminal: { cols: 140, rows: 45, data: () => {} },
+        } as never)
+        for (const end = Date.now() + milliseconds; Date.now() < end && !settled(); ) await Bun.sleep(250)
+        await Bun.sleep(3000)
+        child.kill()
+        await child.exited
+        return [...fetched]
+      }
+      const automatic = await starts({}, () => fetched.includes("/install"))
+      check(
+        "a new version is installed without asking, by default",
+        looked() && automatic.includes("/install"),
+        automatic,
+      )
+      await fs.mkdir(path.dirname(settings), { recursive: true })
+      await fs.writeFile(settings, JSON.stringify({ update: "notify" }))
+      const told = await starts({}, looked)
+      check(
+        'with `"update": "notify"` in `hamzad.json`, a new version is looked for and not installed',
+        told.some((item) => item.endsWith(".json")) && !told.includes("/install"),
+        told,
+      )
+      await fs.rm(settings)
+      // Several times as long as a start needs before it asks.
+      const quiet = await starts({ HAMZAD_DISABLE_AUTOUPDATE: "1" }, () => false, 12_000)
+      check("with HAMZAD_DISABLE_AUTOUPDATE=1, nothing is asked for", quiet.length === 0, quiet)
+      await fs.rm(path.join(home, Brand.dot), { recursive: true, force: true })
+    } finally {
+      await site.stop(true)
+    }
+  }
+
+  // The built program itself: upstream's name nowhere a person reads it.
+  if (bin) {
+    const scan = Bun.spawn({
+      cmd: [process.execPath, path.join(root, "hamzad/script/check-brand.ts"), bin],
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const [counted, named, code] = await Promise.all([
+      new Response(scan.stdout).text(),
+      new Response(scan.stderr).text(),
+      scan.exited,
+    ])
+    console.log(counted.trimEnd().replace(/^/gm, "     "))
+    check("the binary holds upstream's name nowhere a person reads it", code === 0, named.slice(0, 1500))
+  }
 
   check("files went to Hamzad's own directories", await exists(path.join(home, "data", "hamzad")))
   check(
