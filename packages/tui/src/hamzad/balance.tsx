@@ -14,11 +14,11 @@ const [available, setAvailable] = createSignal<number>()
 export const left = available
 
 /**
- * The credits the account has left, beside what the session has spent: in the sidebar, on the
- * prompt's frame, and on the home screen's last line. To the hundredth, since a prompt on a small
- * model costs less than a credit and a whole number would stand still. Asked again whenever a
- * request finishes, since that is when the balance moves, once a minute besides, and whenever the
- * server learns a new figure, as it does when `/usage` opens. Hidden while signed out.
+ * The credits the account has left, beside what the session has spent: in the sidebar and on
+ * the prompt's frame. To the hundredth, since a prompt on a small model costs less than a credit
+ * and a whole number would stand still. Asked again whenever a request finishes, since that is
+ * when the balance moves, once a minute besides, and whenever the server learns a new figure, as
+ * it does when `/usage` opens. Hidden while signed out.
  */
 export default Plugin.define({
   id: "hamzad.balance",
@@ -61,17 +61,6 @@ export default Plugin.define({
             </text>
             <text fg={context.theme.text.muted}>{Brand.money.exact(available() ?? 0)} left</text>
           </box>
-        </Show>
-      ),
-    })
-
-    context.ui.slot({
-      append: "home.footer.status",
-      render: () => (
-        <Show when={available() !== undefined}>
-          <text fg={context.theme.text.muted} wrapMode="none" flexShrink={0}>
-            {Brand.money.exact(available() ?? 0)} left
-          </text>
         </Show>
       ),
     })

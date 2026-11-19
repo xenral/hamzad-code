@@ -390,7 +390,7 @@ try {
   // The interface itself: the credits left move when a prompt is answered, and `/usage` is Hamzad's.
   // A pseudo-terminal is needed, which Windows does not give a child process this way.
   if (process.platform !== "win32") {
-    // On the home screen's last line ("… cr left") and on the prompt's frame ("… cr · ctrl+p menu").
+    // On the prompt's frame ("… cr · ctrl+p menu") and in the sidebar ("… cr left").
     const left = (text: string) => [...text.matchAll(/([\d,]+\.\d\d) cr(?: left| · ctrl)/g)].at(-1)?.[1]
     const amount = (figure: string | undefined) =>
       figure === undefined ? Number.NaN : Number(figure.replace(/,/g, ""))
