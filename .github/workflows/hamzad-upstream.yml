@@ -82,4 +82,5 @@ jobs:
           (cd packages/util && bun test test/hamzad)
           (cd packages/core && bun run test test/hamzad)
           (cd packages/cli && bun test --timeout 30000 test/hamzad)
+          (cd packages/tui && bun test --timeout 30000 test/hamzad)
           bun hamzad/test/e2e.ts --rg "$(command -v rg)"
