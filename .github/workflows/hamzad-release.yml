@@ -84,7 +84,9 @@ jobs:
 
   sign:
     needs: build
-    runs-on: macos-latest
+    # Ad-hoc signing works on any macOS; macos-14, like the arm64 check below, so a release does
+    # not wait on the macos-latest pool.
+    runs-on: macos-14
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
