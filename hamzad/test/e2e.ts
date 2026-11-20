@@ -510,7 +510,7 @@ try {
           empty(lines[top + 1]) &&
           (lines[top + 2] ?? "").includes("❯") &&
           empty(lines[top + 3]) &&
-          /╰─ \S*project ─.* ctrl\+p menu ─╯/.test(lines[top + 4] ?? "")
+          /╰─ \S+ ─.* ctrl\+p menu ─╯/.test(lines[top + 4] ?? "")
         )
       }
       // The home screen: the line under the wordmark, and the prompt in its frame.
