@@ -9,15 +9,15 @@ import { useTheme } from "../context/theme"
 import { contextUsage, formatContextUsage } from "../util/session"
 import { stringWidth } from "../util/string-width"
 import { left as credits } from "./balance"
-import { shortFolder } from "./conversation"
+import { shortFolder, useFolder } from "./folder"
 import { Edge, Sides } from "./frame"
-import { framed } from "./look"
+import { own } from "./look"
 
 /**
- * The prompt in a rounded frame. Its top edge names the mode and the model, or, with no model,
- * why there is none. Its bottom edge carries the credits left and the menu's key, or, while an
- * answer is being written, a spinner and how to stop it; before any session, the folder as well.
- * Upstream's build gets its prompt as it was.
+ * The prompt in a rounded frame, with a line of room above and below what is typed. Its top edge
+ * names the mode and the model, or, with no model, why there is none. Its bottom edge carries the
+ * folder on its left and, on its right, the credits left and the menu's key, or, while an answer is
+ * being written, a spinner and how to stop it. Upstream's build gets its prompt as it was.
  */
 export function HamzadPromptFrame(props: {
   children: JSX.Element
@@ -33,18 +33,23 @@ export function HamzadPromptFrame(props: {
   running: boolean
   /** Whether esc was pressed once already, so the next one stops the answer. */
   armed: boolean
-  /** The folder the next session starts in, shown while there is no conversation frame. */
+  /** The folder the next session starts in, while there is no session; a session's own is used in one. */
   folder?: string
   sessionID?: string
 }) {
-  if (!framed) return props.children
+  if (!own) return props.children
   const theme = useTheme()
   const dimensions = useTerminalDimensions()
   const menu = Keymap.useShortcut("command.palette.show")
+  const data = useData()
   const work = useWork(() => props.sessionID)
+  // The session's folder, which stays put while an answer is written, unlike upstream's line under the prompt.
+  const where = useFolder(() => (props.sessionID ? data.session.get(props.sessionID)?.location : undefined))
   // A long folder is shortened from its start rather than pushing the credits or the menu's key out.
-  const folder = () =>
-    props.folder ? shortFolder(props.folder, Math.max(16, Math.floor(dimensions().width * 0.35))) : undefined
+  const folder = () => {
+    const value = props.sessionID ? where() : props.folder
+    return value ? shortFolder(value, Math.max(16, Math.floor(dimensions().width * 0.35))) : undefined
+  }
   // What the bottom edge says on its right, in order. When the window is too narrow the context
   // figure goes first, then the counts, then the menu's key; the credits stay.
   const status = createMemo(() => {
@@ -92,7 +97,9 @@ export function HamzadPromptFrame(props: {
         }
       />
       {/* The caret takes the column of the right-hand padding, so the input is as wide as upstream's. */}
-      <Sides tight>{props.children}</Sides>
+      <Sides tight roomy>
+        {props.children}
+      </Sides>
       <Edge
         side="bottom"
         bare
@@ -135,7 +142,7 @@ export function HamzadPromptFrame(props: {
 
 /** `❯ ` before the input, or `$ ` in shell mode. Upstream's build has the input alone. */
 export function HamzadCaret(props: { shell: boolean; color?: RGBA; children: JSX.Element }) {
-  if (!framed) return props.children
+  if (!own) return props.children
   const theme = useTheme()
   return (
     <box flexDirection="row" width="100%" minWidth={0}>

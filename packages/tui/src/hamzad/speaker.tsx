@@ -2,14 +2,14 @@ import { Brand } from "@opencode/util/brand"
 import type { RGBA } from "@opentui/core"
 import type { JSX } from "solid-js"
 import { useTheme } from "../context/theme"
-import { framed } from "./look"
+import { own } from "./look"
 
 /**
  * Who is speaking, before the first line of what they said: `you ›` or `hamzad ›`, with the
  * following lines kept under the text. Upstream's build shows the words alone.
  */
 export function HamzadSpeaker(props: { who: "you" | "hamzad"; muted?: boolean; children: JSX.Element }) {
-  if (!framed) return props.children
+  if (!own) return props.children
   const theme = useTheme()
   const color = (): RGBA => (props.muted ? theme.text.muted : props.who === "you" ? theme.text.muted : theme.text.base)
   return (

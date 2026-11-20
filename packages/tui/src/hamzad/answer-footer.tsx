@@ -6,6 +6,7 @@ import { useData } from "../context/data"
 import { useTheme } from "../context/theme"
 import { use } from "../routes/session/render-context"
 import { Locale } from "../util/locale"
+import { stringWidth } from "../util/string-width"
 
 /** What the turn that ended with `message` cost: every step since the person's message. */
 export function turnCost(messages: readonly SessionMessageInfo[], message: SessionMessageAssistant) {
@@ -20,8 +21,8 @@ export function turnCost(messages: readonly SessionMessageInfo[], message: Sessi
 }
 
 /**
- * Under an answer, on the right and quiet: how long the turn took and what it cost. The mode and
- * the model are on the prompt's frame, so they are not repeated here.
+ * Under an answer, in line with its words and quiet: how long the turn took and what it cost. The
+ * mode and the model are on the prompt's frame, so they are not repeated here.
  */
 export function HamzadAnswerFooter(props: { message: SessionMessageAssistant }) {
   const ctx = use()
@@ -45,7 +46,7 @@ export function HamzadAnswerFooter(props: { message: SessionMessageAssistant }) 
   )
   return (
     <Show when={parts().length > 0}>
-      <box flexDirection="row" justifyContent="flex-end" flexShrink={0}>
+      <box flexDirection="row" paddingLeft={stringWidth(`${Brand.cli} › `)} flexShrink={0}>
         <text fg={theme.text.muted} wrapMode="none">
           {parts().join(" · ")}
         </text>

@@ -18,7 +18,7 @@ const rounded: BorderCharacters = {
   cross: "┼",
 }
 
-/** Whether the frames drop their sides at this width. */
+/** Whether the frame drops its sides at this width. */
 export const narrow = (width: number) => width < NARROW
 
 /**
@@ -81,8 +81,17 @@ export function Edge(props: {
   )
 }
 
-/** The frame's sides around its content; below the narrow width there are none. */
-export function Sides(props: { children: JSX.Element; grow?: boolean; color?: RGBA; tight?: boolean }) {
+/**
+ * The frame's sides around its content; below the narrow width there are none. `roomy` keeps a
+ * line of space above and below the content.
+ */
+export function Sides(props: {
+  children: JSX.Element
+  grow?: boolean
+  color?: RGBA
+  tight?: boolean
+  roomy?: boolean
+}) {
   const theme = useTheme()
   const dimensions = useTerminalDimensions()
   return (
@@ -97,6 +106,8 @@ export function Sides(props: { children: JSX.Element; grow?: boolean; color?: RG
       customBorderChars={rounded}
       paddingLeft={narrow(dimensions().width) ? 0 : 1}
       paddingRight={narrow(dimensions().width) || props.tight ? 0 : 1}
+      paddingTop={props.roomy ? 1 : 0}
+      paddingBottom={props.roomy ? 1 : 0}
     >
       {props.children}
     </box>

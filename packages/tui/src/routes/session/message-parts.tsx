@@ -226,7 +226,7 @@ export function InlineToolRow(props: {
 }) {
   return (
     <box
-      paddingLeft={HamzadLook.pad(3)}
+      paddingLeft={HamzadLook.indent(3)}
       onMouseOver={props.onMouseOver}
       onMouseOut={props.onMouseOut}
       onMouseUp={props.onMouseUp}
@@ -252,7 +252,7 @@ export function InlineToolRow(props: {
                 fg={props.failed ? props.errorColor : (props.iconColor ?? props.color)}
                 attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
               >
-                {HamzadLook.framed ? "◆" : props.icon}
+                {HamzadLook.own ? "◆" : props.icon}
               </text>
               <Show
                 when={props.status}

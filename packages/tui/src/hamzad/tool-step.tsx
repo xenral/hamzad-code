@@ -17,10 +17,11 @@ import {
   toolDisplayContent,
   toolDisplayMetadata,
 } from "../util/tool-display"
+import { STEP_INDENT } from "./look"
 
-// A tool step as one line: `◆ <tool>  <target>  <result>`. A running step shows a spinner in place
-// of the mark, a failed one a red mark. A step with more to show (a diff, a command's output, a
-// list) opens it below, on a click, as upstream's view of it.
+// A tool step as one line, set in under the speakers: `◆ <tool>  <target>  <result>`. A running
+// step shows a spinner in place of the mark, a failed one a red mark. A step with more to show (a
+// diff, a command's output, a list) opens it below, on a click, as upstream's view of it.
 
 const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined)
 const first = (value: string | undefined) => value?.split("\n")[0]
@@ -164,7 +165,7 @@ export function HamzadToolStep(props: { part: SessionMessageAssistantTool; detai
   }
   const name = createMemo(() => props.part.name.toLowerCase())
   return (
-    <box flexShrink={0}>
+    <box flexShrink={0} paddingLeft={STEP_INDENT}>
       <box
         flexDirection="row"
         gap={1}

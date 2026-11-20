@@ -500,14 +500,31 @@ try {
       }
       const shown = await screen.until(() => left(screen.text()) !== undefined)
       const before = await figure()
-      // The home screen: the line under the wordmark, and the prompt in its frame, named by mode and model.
+      // The prompt's frame: named by mode and model on top, a line of room above and below what is
+      // typed, and the folder and the menu's key on its bottom edge.
+      const roomy = (lines: string[]) => {
+        const top = lines.findIndex((line) => line.includes("╭─ Code · Claude Sonnet"))
+        const empty = (line = "") => /^\s*│\s*│\s*$/.test(line)
+        return (
+          top !== -1 &&
+          empty(lines[top + 1]) &&
+          (lines[top + 2] ?? "").includes("❯") &&
+          empty(lines[top + 3]) &&
+          /╰─ \S*project ─.* ctrl\+p menu ─╯/.test(lines[top + 4] ?? "")
+        )
+      }
+      // The home screen: the line under the wordmark, and the prompt in its frame.
       screen.redraw()
       const own = ["your coding twin", "╭─ Code · Claude Sonnet", "❯ Tell Hamzad what to do", "ctrl+p menu ─╯"]
       const home = () => screen.lines().join("\n")
       check(
-        "the home screen shows the framed prompt, named by mode and model, and Hamzad's line",
-        await screen.until(() => own.every((word) => home().includes(word)), 15_000),
-        { missing: own.filter((word) => !home().includes(word)), screen: home().slice(-1500) },
+        "the home screen shows the prompt in its frame, named by mode and model, with room around the input, and Hamzad's line",
+        await screen.until(() => own.every((word) => home().includes(word)) && roomy(screen.lines()), 15_000),
+        {
+          missing: own.filter((word) => !home().includes(word)),
+          roomy: roomy(screen.lines()),
+          screen: home().slice(-1500),
+        },
       )
       check(
         "the interface shows the credits left to the hundredth",
@@ -533,22 +550,35 @@ try {
         { before, after, charged: gateway.state.spent - charged },
       )
 
-      // The session: the conversation in its frame, each speaker marked, the tool step on one line.
+      // The session: the conversation open across the window, each speaker marked, the tool step on
+      // one line set in under them, and the prompt's frame as on the home screen.
       screen.redraw()
       const conversation = () => screen.lines().join("\n")
-      const framed = [
-        "╭─ hamzad",
-        "you › Say what the note holds.",
-        "◆ read",
-        "NOTES.txt",
-        "hamzad › The tool returned",
-        " cr",
-        "╰─",
-      ]
+      const words = ["you › Say what the note holds.", "◆ read", "NOTES.txt", "hamzad › The tool returned", " cr"]
+      // The tool step starts two columns in from the speakers.
+      const setIn = () => {
+        const lines = screen.lines()
+        const you = lines.find((line) => line.includes("you › Say what"))
+        const step = lines.find((line) => line.includes("◆ read"))
+        return you !== undefined && step !== undefined && step.indexOf("◆") - you.indexOf("you ›") === 2
+      }
       check(
-        "the session shows the conversation in its frame, `you ›` and `hamzad ›`, and the tool step as one line",
-        await screen.until(() => framed.every((word) => conversation().includes(word)), 15_000),
-        { missing: framed.filter((word) => !conversation().includes(word)), screen: conversation().slice(-1500) },
+        "the session shows the conversation without a frame, `you ›` and `hamzad ›`, the tool step set in on one line, and the roomy prompt",
+        await screen.until(
+          () =>
+            words.every((word) => conversation().includes(word)) &&
+            !conversation().includes("╭─ hamzad") &&
+            setIn() &&
+            roomy(screen.lines()),
+          15_000,
+        ),
+        {
+          missing: words.filter((word) => !conversation().includes(word)),
+          frame: conversation().includes("╭─ hamzad"),
+          setIn: setIn(),
+          roomy: roomy(screen.lines()),
+          screen: conversation().slice(-1500),
+        },
       )
 
       const asked = gateway.requests.filter((request) => request.path === "/llm/usage/summary").length

@@ -1881,7 +1881,7 @@ export function Prompt(props: PromptProps) {
               syntaxStyle={syntax()}
             />
             </HamzadCaret>
-            <Show when={!HamzadLook.framed}>
+            <Show when={!HamzadLook.own}>
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <PromptMetadataRow
                 mode={store.mode}
@@ -1902,7 +1902,7 @@ export function Prompt(props: PromptProps) {
           </box>
         </HamzadBar>
         </HamzadPromptFrame>
-        <Show when={!HamzadLook.framed}>
+        <Show when={!HamzadLook.own}>
         <box
           height={1}
           border={["left"]}

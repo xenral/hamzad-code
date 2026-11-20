@@ -19,10 +19,11 @@ const tool = (
   }) as unknown as SessionMessageAssistantTool
 const path = (value: string | undefined) => value ?? ""
 
-describe.skipIf(!Brand.isHamzad)("the Framed layout", () => {
+describe.skipIf(!Brand.isHamzad)("Hamzad's layout", () => {
   test("is this build's, and upstream's build keeps its own", () => {
-    expect(HamzadLook.framed).toBe(true)
+    expect(HamzadLook.own).toBe(true)
     expect(HamzadLook.pad(3)).toBe(0)
+    expect(HamzadLook.indent(3)).toBe(HamzadLook.STEP_INDENT)
     expect(HamzadLook.flat("fill")).toBeUndefined()
     expect(HamzadLook.grouping).toBe("none")
   })

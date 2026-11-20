@@ -30,8 +30,8 @@ export type SessionGroup = {
 
 /** Experimental transcript detail; undefined selects the default production rules. */
 export type Verbosity = "low" | "medium" | "high"
-// The Framed layout shows each tool step on its own line, so it starts from the level that does.
-export const defaultVerbosity: Verbosity = HamzadLook.framed ? "medium" : "low"
+// Hamzad's layout shows each tool step on its own line, so it starts from the level that does.
+export const defaultVerbosity: Verbosity = HamzadLook.own ? "medium" : "low"
 
 export type SessionRow = SessionEntry | SessionGroup
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { shortFolder } from "../../src/hamzad/conversation"
+import { shortFolder } from "../../src/hamzad/folder"
 
 describe("a folder on a frame's edge", () => {
   test("is shown whole when it fits", () => {
