@@ -510,7 +510,9 @@ try {
           empty(lines[top + 1]) &&
           (lines[top + 2] ?? "").includes("❯") &&
           empty(lines[top + 3]) &&
-          /╰─ \S+ ─.* ctrl\+p menu ─╯/.test(lines[top + 4] ?? "")
+          /╰─ \S+ ─.* ctrl\+p menu ─╯/.test(lines[top + 4] ?? "") &&
+          // A long folder is shortened once, from its start, never cut in its middle as well.
+          !(lines[top + 4] ?? "").includes("...")
         )
       }
       // The home screen: the line under the wordmark, and the prompt in its frame.

@@ -1692,7 +1692,7 @@ export function Prompt(props: PromptProps) {
           shell={store.mode === "shell"}
           running={status() === "running"}
           armed={store.interrupt > 0}
-          folder={props.sessionID ? undefined : locationLabelDisplay()}
+          folder={props.sessionID ? undefined : locationLabel()}
           sessionID={props.sessionID}
         >
         <HamzadBar

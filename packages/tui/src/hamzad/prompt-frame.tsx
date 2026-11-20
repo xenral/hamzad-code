@@ -1,16 +1,15 @@
 import { Brand } from "@opencode/util/brand"
-import type { RGBA } from "@opentui/core"
+import type { BoxRenderable, RGBA } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { createMemo, Show, type JSX } from "solid-js"
+import { createMemo, createSignal, Show, type JSX } from "solid-js"
 import { Spinner } from "../component/spinner"
 import { useData } from "../context/data"
 import { Keymap } from "../context/keymap"
 import { useTheme } from "../context/theme"
 import { contextUsage, formatContextUsage } from "../util/session"
-import { stringWidth } from "../util/string-width"
 import { left as credits } from "./balance"
-import { shortFolder, useFolder } from "./folder"
-import { Edge, Sides } from "./frame"
+import { fitEdge, useFolder, type EdgeItem } from "./folder"
+import { Edge, narrow, Sides } from "./frame"
 import { own } from "./look"
 
 /**
@@ -45,14 +44,11 @@ export function HamzadPromptFrame(props: {
   const work = useWork(() => props.sessionID)
   // The session's folder, which stays put while an answer is written, unlike upstream's line under the prompt.
   const where = useFolder(() => (props.sessionID ? data.session.get(props.sessionID)?.location : undefined))
-  // A long folder is shortened from its start rather than pushing the credits or the menu's key out.
-  const folder = () => {
-    const value = props.sessionID ? where() : props.folder
-    return value ? shortFolder(value, Math.max(16, Math.floor(dimensions().width * 0.35))) : undefined
-  }
-  // What the bottom edge says on its right, in order. When the window is too narrow the context
-  // figure goes first, then the counts, then the menu's key; the credits stay.
-  const status = createMemo(() => {
+  // The frame's own width, which is less than the window's beside the sidebar or on the home screen.
+  const [width, setWidth] = createSignal(dimensions().width)
+  // What the bottom edge says, in order. When it is short of room the context figure goes first, then
+  // the counts, then the menu's key; the credits stay, and the folder is shortened to what is left.
+  const edge = createMemo(() => {
     const credit = credits() === undefined ? undefined : Brand.money.exact(credits()!)
     const items = [
       { text: work().counts, drop: 2 },
@@ -63,16 +59,12 @@ export function HamzadPromptFrame(props: {
             { text: credit, drop: 0 },
             { text: menu() ? `${menu()} menu` : undefined, drop: 3 },
           ]),
-    ].filter((item): item is { text: string; drop: number } => Boolean(item.text))
-    // The frame's edge less its corners, the screen's margins, the spaces around both sides and the folder.
-    const room = dimensions().width - 14 - (folder() ? stringWidth(folder()!) + 2 : 0)
-    const shown = [...items]
-    for (const level of [1, 2, 3]) {
-      if (stringWidth(shown.map((item) => item.text).join(" · ")) <= room) break
-      shown.splice(0, shown.length, ...shown.filter((item) => item.drop !== level))
-    }
-    return shown.map((item) => item.text)
+    ].filter((item): item is EdgeItem => Boolean(item.text))
+    const folder = props.sessionID ? where() : props.folder
+    return fitEdge({ width: width(), ends: narrow(dimensions().width) ? 2 : 4, folder, items })
   })
+  const folder = () => edge().folder
+  const status = () => edge().status
   const title = () => {
     if (props.shell) return [{ text: "Shell", fg: props.color ?? theme.text.base }]
     if (!props.chosen) return [{ text: `${props.model} · ${props.provider}`, fg: theme.text.feedback.warning.base }]
@@ -83,7 +75,14 @@ export function HamzadPromptFrame(props: {
     ]
   }
   return (
-    <box width="100%" flexShrink={0}>
+    <box
+      width="100%"
+      flexShrink={0}
+      onSizeChange={function (this: BoxRenderable) {
+        const measured = this.width
+        queueMicrotask(() => setWidth(measured))
+      }}
+    >
       <Edge
         side="top"
         left={
