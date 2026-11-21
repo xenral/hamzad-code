@@ -663,9 +663,11 @@ try {
       { HAMZAD_DISABLE_AUTOUPDATE: "1", TERM_PROGRAM: "vscode" },
       async (screen) => {
         const done = await screen.until(() => screen.text().includes("The tool returned"), 90_000)
+        // Each right-to-left letter is followed by an invisible left-to-right mark, so VS Code drawing
+        // without the GPU, which lets the browser order text again, keeps it as laid out.
         check(
-          "a run printing to VS Code's terminal writes Persian right to left with its letters joined",
-          done && screen.text().includes(seen) && !screen.text().includes(sentence),
+          "a run printing to VS Code's terminal writes Persian right to left with its letters joined and marked",
+          done && screen.text().includes(HamzadRtl.marked(seen)) && !screen.text().includes(sentence),
           persian(screen.text()).slice(0, 6),
         )
       },

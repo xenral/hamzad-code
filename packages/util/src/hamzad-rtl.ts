@@ -545,6 +545,26 @@ export function text(value: string, columns?: number) {
     .join("\n")
 }
 
+// A right-to-left letter or digit, in any of its forms, with the marks it carries.
+const rtlLetter = /(?!\p{M})[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]\p{M}*/gu
+
+/**
+ * Laid-out text with an invisible left-to-right mark after each right-to-left letter, outside escape
+ * sequences. VS Code's and Cursor's terminal, when it draws without the GPU, hands each run of text
+ * to the browser, which orders right-to-left letters again and so turns a laid-out line back to
+ * front; between the marks there is nothing left to reorder. A mark takes no column, and terminals
+ * that draw each cell as it is show nothing of it.
+ */
+export function marked(value: string) {
+  let output = ""
+  let at = 0
+  for (const match of value.matchAll(escapes)) {
+    output += value.slice(at, match.index).replace(rtlLetter, "$&\u200e") + match[0]
+    at = match.index + match[0].length
+  }
+  return output + value.slice(at).replace(rtlLetter, "$&\u200e")
+}
+
 export type Setting = "auto" | "on" | "off"
 
 /**

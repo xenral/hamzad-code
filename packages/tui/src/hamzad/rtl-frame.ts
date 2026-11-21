@@ -5,7 +5,9 @@ export * as HamzadRtlFrame from "./rtl-frame.js"
 // it is written out: cells move with their own colours and attributes, so a highlighted word, inline
 // code or a link stays on its letters, and the letters that change form are drawn again through the
 // buffer's own drawing, which keeps its count of the clusters it holds. The text the interface holds
-// is not touched, so selecting and copying still give the letters as they were written.
+// is not touched, so selecting and copying still give the letters as they were written. Each cell of
+// what moved differs a little from its neighbour (see `separate`), so a terminal that hands runs of
+// alike cells to a browser does not reorder them again.
 
 import { RGBA, type OptimizedBuffer } from "@opentui/core"
 import { HamzadRtl } from "@opencode/util/hamzad-rtl"
@@ -149,7 +151,55 @@ function row(
     attributes[cell] = attribute
   }
 
+  // The stretch the layout changed, from the first glyph it moved or reshaped to the last.
+  let first = -1
+  let last = -1
+  layout.order.forEach((glyph, place) => {
+    if (glyph === place && !layout.text.has(glyph)) return
+    if (first === -1) first = place
+    last = place
+  })
+  if (first !== -1) separate(cells, base, columns[first], Math.min(width, columns[last + 1] + 1))
+
   if (layout.caret === undefined) return undefined
   const column = layout.caret < 0 ? -1 : columns[Math.min(layout.caret, layout.order.length)]
   return Math.max(0, Math.min(width - 1, column))
+}
+
+// A colour's kind is kept in the high byte of its second channel: 0 for an exact colour, which is
+// written to the terminal as it is, unlike a palette number or the terminal's own default.
+const exact = (plane: Uint16Array, cell: number) => plane[cell * 4 + 1] >>> 8 === 0
+const opaque = (plane: Uint16Array, cell: number) => (plane[cell * 4 + 3] & 0xff) === 0xff
+
+/**
+ * Makes each cell from `from` to `to` (one past the stretch, so its last letter is apart from what
+ * follows) differ from the cell before it, by one step of blue out of 256 where none can see it.
+ * VS Code's and Cursor's terminal, when it draws without the GPU, puts each run of cells alike in
+ * an element of its own and lets the browser order the letters inside it again, which turns text
+ * laid out here back to front. With one letter to an element there is nothing left to reorder;
+ * terminals that draw each cell as it is see no change.
+ */
+function separate(cells: Cells, base: number, from: number, to: number) {
+  const { char, fg, bg, attributes } = cells
+  const same = (a: number, b: number) => {
+    if (attributes[a] !== attributes[b]) return false
+    for (let k = 0; k < 4; k++) if (fg[a * 4 + k] !== fg[b * 4 + k] || bg[a * 4 + k] !== bg[b * 4 + k]) return false
+    return true
+  }
+  let previous = from > 0 ? base + from - 1 : -1
+  for (let x = from; x < to; x++) {
+    const cell = base + x
+    if (continuation(char[cell])) continue
+    if (previous !== -1 && same(previous, cell)) {
+      if (exact(fg, cell)) fg[cell * 4 + 2] ^= 1
+      else if (exact(bg, cell) && opaque(bg, cell)) bg[cell * 4 + 2] ^= 1
+      else {
+        // Neither colour is written exactly: the text takes its colour as an exact one, nudged.
+        fg[cell * 4] &= 0xff
+        fg[cell * 4 + 1] &= 0xff
+        fg[cell * 4 + 2] ^= 1
+      }
+    }
+    previous = cell
+  }
 }

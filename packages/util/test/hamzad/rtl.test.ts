@@ -251,3 +251,22 @@ describe("when the layout is on", () => {
     expect(HamzadRtl.enabled(undefined, { TERM_PROGRAM: "vscode", HAMZAD_RTL: "OFF" })).toBe(false)
   })
 })
+
+describe("a laid-out line for a terminal that may hand its text to a browser", () => {
+  const mark = "‎"
+  test("has a left-to-right mark after each right-to-left letter, with the marks it carries", () => {
+    const shown = HamzadRtl.text("سلام، لطفاً ۱۲")
+    const marked = HamzadRtl.marked(shown)
+    expect(marked.replaceAll(mark, "")).toBe(shown)
+    // every right-to-left letter is followed by a mark, and no vowel mark is parted from its letter
+    expect(marked).not.toMatch(/[ﭐ-﻿](?!\p{M}*‎)/u)
+    expect(marked).not.toMatch(/‎\p{M}/u)
+    expect(marked).toContain(`${cp(0xfe8e, 0x64b)}${mark}`)
+  })
+
+  test("leaves other text and escape sequences as they are", () => {
+    expect(HamzadRtl.marked("plain English 42")).toBe("plain English 42")
+    const link = "\x1b]8;;https://hamzad.ai/سلام\x1b\\"
+    expect(HamzadRtl.marked(`${link}ﻡ\x1b[0m`)).toBe(`${link}ﻡ${mark}\x1b[0m`)
+  })
+})

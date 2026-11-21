@@ -19,7 +19,7 @@ export const configure = Effect.fn("cli.hamzad.rtl.configure")(function* () {
   state.on = HamzadRtl.enabled(info?.rtl, process.env)
 })
 
-/** A line for the terminal as it should be written there. */
+/** A line for the terminal as it should be written there, marked so no browser-drawn terminal reorders it again. */
 export function line(text: string) {
-  return state.on ? HamzadRtl.text(text, process.stderr.columns) : text
+  return state.on ? HamzadRtl.marked(HamzadRtl.text(text, process.stderr.columns)) : text
 }
